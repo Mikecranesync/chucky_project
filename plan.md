@@ -119,10 +119,10 @@ This section provides a step-by-step guide to deploying n8n on your Hostinger VP
 
 ### Step 1: Connect to Your VPS
 
-Connect to your VPS using SSH. Replace `your_username` and `your_vps_ip` with your actual credentials.
+Connect to your VPS using SSH.
 
 ```bash
-ssh your_username@your_vps_ip
+ssh root@72.60.175.144
 ```
 
 ### Step 2: Update Your Server
@@ -208,6 +208,8 @@ n8n.maintpc.com {
 ### Step 7: Configure Your DNS
 
 In your Hostinger DNS settings for `maintpc.com`, create an **A record** that points your chosen subdomain (e.g., `n8n`) to your VPS's IP address (`72.60.175.144`).
+
+**Note:** It is recommended to use a subdomain for n8n (like `n8n.maintpc.com`) to avoid conflicts with your existing website at `maintpc.com`.
 
 *   **Type:** A
 *   **Name:** n8n
