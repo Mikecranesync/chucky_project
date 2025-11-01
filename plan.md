@@ -259,3 +259,178 @@ Wait a few minutes for the DNS changes to propagate and for Caddy to set up the 
 You should see the n8n setup screen, where you can create your owner account.
 
 Congratulations! You have successfully deployed n8n on your Hostinger VPS.
+
+## 10. Implementing Programmatic Workflow Automation (Scripted Method)
+
+This section outlines the steps to start implementing the "Scripted" method for programmatic n8n workflow automation, as described in the `gemini.md` file. This method uses the Gemini CLI and `curl` to interact with the n8n API.
+
+### Step 1: Set up your n8n API Credentials
+
+Before you can interact with the n8n API, you need to get your API key from your n8n instance and set it as an environment variable on your VPS.
+
+1.  **Get your n8n API Key:**
+    *   Log in to your n8n instance at `https://n8n.maintpc.com`.
+    *   Go to **Settings > n8n API**.
+    *   Click **Create an API key**.
+    *   Give your key a name (e.g., `gemini-cli`) and copy the key.
+
+2.  **Set Environment Variables on your VPS:**
+    *   Connect to your VPS via SSH: `ssh root@72.60.175.144`
+    *   Open the `~/.bashrc` file in a text editor: `nano ~/.bashrc`
+    *   Add the following lines to the end of the file, replacing the placeholder values with your actual n8n URL and API key:
+
+        ```bash
+        export N8N_URL="https://n8n.maintpc.com"
+        export N8N_API_KEY="your-n8n-api-key-goes-here"
+        ```
+    *   Save the file (`Ctrl+X`, `Y`, `Enter`).
+    *   Load the new environment variables: `source ~/.bashrc`
+
+### Step 2: Create a New Workflow from a Natural Language Prompt
+
+This script uses Gemini to generate a workflow from scratch and immediately uploads it to n8n.
+
+1.  **Create the script file:**
+    *   On your VPS, create a new file named `create_workflow.sh`:
+        ```bash
+        nano create_workflow.sh
+        ```
+    *   Copy and paste the following script into the file:
+
+        ```bash
+        #!/bin/bash
+        # create_workflow.sh
+
+        # 1. DEFINE THE PROMPT
+        # The prompt is highly specific to ensure we get ONLY raw JSON back.
+        PROMPT="Generate a complete n8n workflow JSON. The workflow must:
+        1. Trigger with a Webhook node named 'Start'.
+        2. Connect to a Set node named 'Set Message' that sets a variable 'message' to 'Hello from Gemini'.
+        3. Connect 'Set Message' to a 'Respond to Webhook' node.
+        4. Respond ONLY with the raw, valid JSON. Do not include markdown or any other text."
+
+        echo "Generating workflow JSON from Gemini..."
+
+        # 2. GENERATE
+        # We use 'gemini -p' for non-interactive mode.
+        # We redirect output to a file for inspection and for the 'curl -d @' command.
+        gemini -p "$PROMPT" > new_workflow.json
+
+        if [ ! -s new_workflow.json ]; then
+            echo "Error: Gemini did not produce an output file. Check Gemini auth and prompt."
+            exit 1
+        fi
+
+        echo "Uploading new workflow to n8n..."
+
+        # 3. WRITE
+        # -s for silent, -w "\n%{http_code}" to print the HTTP code on a new line.
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+        "$N8N_URL/api/v1/workflows" \
+        -H "accept: application/json" \
+        -H "X-N8N-API-KEY: $N8N_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d @new_workflow.json)
+
+        # 4. PARSE RESPONSE
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+
+        if [ $HTTP_CODE -eq 201 ]; then
+            echo "Successfully created workflow."
+            echo "$BODY"
+        else
+            echo "Failed to create workflow. HTTP Code: $HTTP_CODE"
+            echo "Response: $BODY"
+        fi
+        ```
+    *   Save the file (`Ctrl+X`, `Y`, `Enter`).
+    *   Make the script executable: `chmod +x create_workflow.sh`
+
+2.  **Run the script:**
+    ```bash
+    ./create_workflow.sh
+    ```
+
+This will create a new workflow in your n8n instance.
+
+### Step 3: Update an Existing Workflow (Read-Modify-Write)
+
+This script performs the complete cycle: fetching an existing workflow, using Gemini to modify it, and uploading the new version.
+
+1.  **Create the script file:**
+    *   On your VPS, create a new file named `update_workflow.sh`:
+        ```bash
+        nano update_workflow.sh
+        ```
+    *   Copy and paste the following script into the file:
+
+        ```bash
+        #!/bin/bash
+        # update_workflow.sh
+
+        if [ -z "$1" ]; then
+            echo "Usage: $0 <WORKFLOW_ID>"
+            exit 1
+        fi
+
+        WORKFLOW_ID=$1
+
+        PROMPT="Review the following n8n workflow JSON. Add a new 'Set' node with the name 'Gemini-Modified' that sets a variable 'status' to 'updated'. Connect it between the 'Start' node and whatever 'Start' connects to. Respond ONLY with the new, complete, valid JSON."
+
+        # 1. READ
+        echo "Fetching workflow $WORKFLOW_ID..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+        "$N8N_URL/api/v1/workflows/$WORKFLOW_ID" \
+        -H "accept: application/json" \
+        -H "X-N8N-API-KEY: $N8N_API_KEY")
+
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+
+        if [ $HTTP_CODE -ne 200 ]; then
+            echo "Error fetching workflow. HTTP Code: $HTTP_CODE"
+            echo "Response: $BODY"
+            exit 1
+        fi
+
+        echo "$BODY" > current_workflow.json
+
+        # 2. MODIFY
+        echo "Modifying workflow with Gemini..."
+        gemini -p "@current_workflow.json $PROMPT" > modified_workflow.json
+
+        if [ ! -s modified_workflow.json ]; then
+            echo "Error: Gemini failed to produce a modified workflow."
+            exit 1
+        fi
+
+        # 3. WRITE
+        echo "Uploading modified workflow..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+        "$N8N_URL/api/v1/workflows/$WORKFLOW_ID" \
+        -H "accept: application/json" \
+        -H "X-N8N-API-KEY: $N8N_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d @modified_workflow.json)
+
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+
+        if [ $HTTP_CODE -eq 200 ]; then
+            echo "Successfully updated workflow $WORKFLOW_ID."
+        else
+            echo "Failed to update workflow. HTTP Code: $HTTP_CODE"
+            echo "Response: $BODY"
+        fi
+        ```
+    *   Save the file (`Ctrl+X`, `Y`, `Enter`).
+    *   Make the script executable: `chmod +x update_workflow.sh`
+
+2.  **Run the script:**
+    *   First, get the ID of the workflow you want to update from your n8n instance.
+    *   Then, run the script with the workflow ID as an argument:
+        ```bash
+        ./update_workflow.sh 123
+        ```
+        (Replace `123` with your actual workflow ID).
