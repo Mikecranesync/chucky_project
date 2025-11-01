@@ -1,0 +1,5076 @@
+{
+  "name": "Chucky",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -2432,
+        -1152
+      ],
+      "id": "dfcc3464-8a53-417a-9444-1840cd4e699a",
+      "name": "4 Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-1.5-pro-latest",
+          "mode": "list",
+          "cachedResultName": "models/gemini-1.5-pro-latest"
+        },
+        "text": "=Analyze this image and categorize it into the most appropriate category. Look at the main subject and content to determine the best classification.\n\nCATEGORIES TO CONSIDER:\n\nINDUSTRIAL & EQUIPMENT:\n- electrical, mechanical, hvac, instrumentation, safety, piping, vehicles, tools, machinery\n\nPERSONAL & LIFESTYLE:\n- family, friends, pets, selfies, portraits, events, celebrations, travel, vacation, food, home\n\nNATURE & OUTDOORS:\n- landscapes, wildlife, plants, flowers, trees, beaches, mountains, sky, weather, sunset\n\nACTIVITIES & HOBBIES:\n- sports, exercise, cooking, gardening, crafts, music, art, gaming, reading, projects\n\nWORK & PROFESSIONAL:\n- office, meetings, presentations, documents, construction, business, workplace\n\nTRANSPORTATION:\n- cars, trucks, motorcycles, boats, planes, trains, parking, roads, traffic\n\nBUILDINGS & ARCHITECTURE:\n- houses, buildings, interiors, rooms, architecture, construction, real estate\n\nOBJECTS & ITEMS:\n- products, purchases, collections, belongings, technology, electronics, appliances\n\nEDUCATION & LEARNING:\n- school, books, classes, training, workshops, certificates, studying\n\nMEDICAL & HEALTH:\n- medical equipment, hospitals, health records, injuries, treatments, wellness\n\nRespond with detailed JSON:\n{\n  \"primaryCategory\": \"main_category_name\",\n  \"subcategory\": \"specific_subcategory\",\n  \"confidence\": number_0_to_100,\n  \"description\": \"detailed_description_of_image_content\",\n  \"keywords\": [\"keyword1\", \"keyword2\", \"keyword3\"],\n  \"extractedText\": \"any_visible_text_in_image\",\n  \"isIndustrial\": boolean,\n  \"mainSubjects\": [\"subject1\", \"subject2\"],\n  \"setting\": \"indoor|outdoor|unknown\",\n  \"timeOfDay\": \"morning|afternoon|evening|night|unknown\",\n  \"peoplePresent\": boolean,\n  \"brandLogos\": [\"brand1\", \"brand2\"],\n  \"actionHappening\": \"description_of_activity_or_none\"\n}",
+        "inputType": "binary",
+        "options": {
+          "maxOutputTokens": 300
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1984,
+        -1152
+      ],
+      "id": "c8b65ae2-7f3d-483a-a85b-72af69f78e51",
+      "name": "6 Analyze image",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2208,
+        -1152
+      ],
+      "id": "557159e4-7a08-4749-8395-cc7923ee17c5",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the response from previous node\nconst item = $input.first().json;\n\n// Get the text - try multiple possible locations\nconst rawText = item.content?.parts?.[0]?.text || \n                item.rawContent || \n                item.text || \n                JSON.stringify(item);\n\n// Extract all fields using regex\nlet category = 'uncategorized';\nlet primaryCategory = '';\nlet confidence = 0;\nlet description = '';\nlet keywords = [];\nlet extractedText = '';\n\n// Extract subcategory\nconst subcategoryMatch = rawText.match(/\"subcategory\"\\s*:\\s*\"([^\"]+)\"/);\nif (subcategoryMatch) {\n    category = subcategoryMatch[1];\n}\n\n// Extract primaryCategory\nconst primaryMatch = rawText.match(/\"primaryCategory\"\\s*:\\s*\"([^\"]+)\"/);\nif (primaryMatch) {\n    primaryCategory = primaryMatch[1];\n}\n\n// Extract confidence\nconst confidenceMatch = rawText.match(/\"confidence\"\\s*:\\s*(\\d+)/);\nif (confidenceMatch) {\n    confidence = parseInt(confidenceMatch[1]);\n}\n\n// Extract description\nconst descriptionMatch = rawText.match(/\"description\"\\s*:\\s*\"([^\"]+)\"/);\nif (descriptionMatch) {\n    description = descriptionMatch[1];\n}\n\n// Extract keywords array\nconst keywordsMatch = rawText.match(/\"keywords\"\\s*:\\s*\\[([^\\]]+)\\]/);\nif (keywordsMatch) {\n    // Parse the keywords array string\n    keywords = keywordsMatch[1]\n        .split(',')\n        .map(k => k.trim().replace(/['\"]/g, ''));\n}\n\n// Extract any text found in the image\nconst textMatch = rawText.match(/\"extractedText\"\\s*:\\s*\"([^\"]+)\"/);\nif (textMatch) {\n    extractedText = textMatch[1].replace(/\\\\n/g, ' ');\n}\n\n// If no subcategory found, use primary category\nif (category === 'uncategorized' && primaryCategory) {\n    category = primaryCategory;\n}\n\n// Clean up for folder name\nconst folderName = category.toLowerCase()\n    .replace(/[&\\s]+/g, '-')  // Replace spaces and & with dash\n    .replace(/[^a-z0-9-]/g, '') // Remove other special chars\n    .replace(/--+/g, '-')      // Replace multiple dashes with single\n    .trim();\n\nreturn {\n    json: {\n        // Main categorization\n        category: category,\n        primaryCategory: primaryCategory,\n        folderName: folderName || 'uncategorized',\n        confidence: confidence,\n        \n        // Full analysis from Gemini\n        description: description,\n        keywords: keywords,\n        extractedText: extractedText,\n        \n        // Keep the original response too\n        originalGeminiResponse: rawText,\n        \n        // Metadata for your database/tracking\n        processedAt: new Date().toISOString(),\n        confidenceLevel: confidence > 80 ? 'high' : confidence > 50 ? 'medium' : 'low'\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        -1152
+      ],
+      "id": "75f530f4-e2f4-4193-a6ba-761a94d494b1",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "tableId": "photos",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $('4 Download file').item.json.name }}"
+            },
+            {
+              "fieldId": "category",
+              "fieldValue": "={{ $json.primaryCategory }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $('Limit').item.json.webContentLink }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1536,
+        -1056
+      ],
+      "id": "b7d87f91-8bb0-4330-bdf1-90efd503ea78",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "queryString": "={{ $json.folderName }}",
+        "returnAll": true,
+        "filter": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1536,
+        -1248
+      ],
+      "id": "a174014e-ef7f-4010-aa10-539131c6dcb0",
+      "name": "Search files and folders",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS folders (\n    name TEXT PRIMARY KEY,\n    drive_folder_id TEXT NOT NULL,\n    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2656,
+        -160
+      ],
+      "id": "96b53377-7087-4bd2-b218-56a174c9d551",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "fsAWW3py5CirUNiS",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1984,
+        -448
+      ],
+      "id": "81fa4b1c-0d20-4f08-beaf-c3f6525f0658",
+      "name": "4 Download file1",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro-preview-03-25",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro-preview-03-25"
+        },
+        "text": "=Analyze this image and categorize it into the most appropriate category. Look at the main subject and content to determine the best classification.\n\nCATEGORIES TO CONSIDER:\n\nINDUSTRIAL & EQUIPMENT:\n- electrical, mechanical, hvac, instrumentation, safety, piping, vehicles, tools, machinery\n\nPERSONAL & LIFESTYLE:\n- family, friends, pets, selfies, portraits, events, celebrations, travel, vacation, food, home\n\nNATURE & OUTDOORS:\n- landscapes, wildlife, plants, flowers, trees, beaches, mountains, sky, weather, sunset\n\nACTIVITIES & HOBBIES:\n- sports, exercise, cooking, gardening, crafts, music, art, gaming, reading, projects\n\nWORK & PROFESSIONAL:\n- office, meetings, presentations, documents, construction, business, workplace\n\nTRANSPORTATION:\n- cars, trucks, motorcycles, boats, planes, trains, parking, roads, traffic\n\nBUILDINGS & ARCHITECTURE:\n- houses, buildings, interiors, rooms, architecture, construction, real estate\n\nOBJECTS & ITEMS:\n- products, purchases, collections, belongings, technology, electronics, appliances\n\nEDUCATION & LEARNING:\n- school, books, classes, training, workshops, certificates, studying\n\nMEDICAL & HEALTH:\n- medical equipment, hospitals, health records, injuries, treatments, wellness\n\nRespond with detailed JSON:\n{\n  \"primaryCategory\": \"main_category_name\",\n  \"subcategory\": \"specific_subcategory\",\n  \"confidence\": number_0_to_100,\n  \"description\": \"detailed_description_of_image_content\",\n  \"keywords\": [\"keyword1\", \"keyword2\", \"keyword3\"],\n  \"extractedText\": \"any_visible_text_in_image\",\n  \"isIndustrial\": boolean,\n  \"mainSubjects\": [\"subject1\", \"subject2\"],\n  \"setting\": \"indoor|outdoor|unknown\",\n  \"timeOfDay\": \"morning|afternoon|evening|night|unknown\",\n  \"peoplePresent\": boolean,\n  \"brandLogos\": [\"brand1\", \"brand2\"],\n  \"actionHappening\": \"description_of_activity_or_none\"\n}",
+        "inputType": "binary",
+        "options": {
+          "maxOutputTokens": 300
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1536,
+        -448
+      ],
+      "id": "ad96ba6c-4075-47d2-899d-79a6da656913",
+      "name": "6 Analyze image1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        -448
+      ],
+      "id": "02693853-37e5-4358-8be3-377fcaff68c7",
+      "name": "Limit1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the response from previous node\nconst item = $input.first().json;\n\n// Get the text - try multiple possible locations\nconst rawText = item.content?.parts?.[0]?.text || \n                item.rawContent || \n                item.text || \n                JSON.stringify(item);\n\n// Extract all fields using regex\nlet category = 'uncategorized';\nlet primaryCategory = '';\nlet confidence = 0;\nlet description = '';\nlet keywords = [];\nlet extractedText = '';\n\n// Extract subcategory\nconst subcategoryMatch = rawText.match(/\"subcategory\"\\s*:\\s*\"([^\"]+)\"/);\nif (subcategoryMatch) {\n    category = subcategoryMatch[1];\n}\n\n// Extract primaryCategory\nconst primaryMatch = rawText.match(/\"primaryCategory\"\\s*:\\s*\"([^\"]+)\"/);\nif (primaryMatch) {\n    primaryCategory = primaryMatch[1];\n}\n\n// Extract confidence\nconst confidenceMatch = rawText.match(/\"confidence\"\\s*:\\s*(\\d+)/);\nif (confidenceMatch) {\n    confidence = parseInt(confidenceMatch[1]);\n}\n\n// Extract description\nconst descriptionMatch = rawText.match(/\"description\"\\s*:\\s*\"([^\"]+)\"/);\nif (descriptionMatch) {\n    description = descriptionMatch[1];\n}\n\n// Extract keywords array\nconst keywordsMatch = rawText.match(/\"keywords\"\\s*:\\s*\\[([^\\]]+)\\]/);\nif (keywordsMatch) {\n    // Parse the keywords array string\n    keywords = keywordsMatch[1]\n        .split(',')\n        .map(k => k.trim().replace(/['\"]/g, ''));\n}\n\n// Extract any text found in the image\nconst textMatch = rawText.match(/\"extractedText\"\\s*:\\s*\"([^\"]+)\"/);\nif (textMatch) {\n    extractedText = textMatch[1].replace(/\\\\n/g, ' ');\n}\n\n// If no subcategory found, use primary category\nif (category === 'uncategorized' && primaryCategory) {\n    category = primaryCategory;\n}\n\n// Clean up for folder name\nconst folderName = category.toLowerCase()\n    .replace(/[&\\s]+/g, '-')  // Replace spaces and & with dash\n    .replace(/[^a-z0-9-]/g, '') // Remove other special chars\n    .replace(/--+/g, '-')      // Replace multiple dashes with single\n    .trim();\n\nreturn {\n    json: {\n        // Main categorization\n        category: category,\n        primaryCategory: primaryCategory,\n        folderName: folderName || 'uncategorized',\n        confidence: confidence,\n        \n        // Full analysis from Gemini\n        description: description,\n        keywords: keywords,\n        extractedText: extractedText,\n        \n        // Keep the original response too\n        originalGeminiResponse: rawText,\n        \n        // Metadata for your database/tracking\n        processedAt: new Date().toISOString(),\n        confidenceLevel: confidence > 80 ? 'high' : confidence > 50 ? 'medium' : 'low'\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        -448
+      ],
+      "id": "385790a7-c0bf-4190-a799-c005153584cc",
+      "name": "Code2"
+    },
+    {
+      "parameters": {
+        "tableId": "photos",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $('4 Download file1').item.json.name }}"
+            },
+            {
+              "fieldId": "category",
+              "fieldValue": "={{ $json.primaryCategory }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $('Google Drive Backlog').item.json.webViewLink }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        -640
+      ],
+      "id": "1731ab66-ade7-4243-9913-75a66c91125c",
+      "name": "Create a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T",
+          "mode": "list",
+          "cachedResultName": "Unprophoto",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T"
+        },
+        "event": "watchFolderUpdated"
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        -1152
+      ],
+      "id": "55d43942-2a33-4bd3-9a8b-b4cea34a789f",
+      "name": "Google Drive IFTTT",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T",
+          "mode": "list",
+          "cachedResultName": "Unprophoto",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        -448
+      ],
+      "id": "8f46d029-3858-4fdd-aec4-91d489a3f114",
+      "name": "Google Drive Backlog",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "=",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T",
+            "mode": "list",
+            "cachedResultName": "Unprophoto",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -2432,
+        -448
+      ],
+      "id": "bc19a9c8-e5dd-4fd8-a3ee-9bcd6915d84f",
+      "name": "Search files and folders2",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2208,
+        -448
+      ],
+      "id": "22081b69-f387-42ad-a7ad-0add0787afea",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me1",
+      "typeVersion": 1,
+      "position": [
+        -1088,
+        -384
+      ],
+      "id": "e20e481f-b0c5-42c4-a387-d4a8e5c2172a"
+    },
+    {
+      "parameters": {
+        "content": "ONLY ACCEPTS .JPG NO FILTER"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2224,
+        -640
+      ],
+      "typeVersion": 1,
+      "id": "cdee370c-cd65-418a-9a58-13aee27e301d",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        2448,
+        80
+      ],
+      "id": "5b1b9dad-ba5a-40a8-88fd-8bd948aa21ac",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        304
+      ],
+      "id": "c61a6781-53a9-4713-855f-cf259defb392",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        2592,
+        304
+      ],
+      "id": "6ec6940d-aeaa-419b-88be-13826c8b4b36",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1648,
+        512
+      ],
+      "id": "dad75beb-a6e4-4307-acad-8bef1adad428",
+      "name": "4 Download file2",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro"
+        },
+        "text": "=Analyze this image and categorize it into the most appropriate category. Look at the main subject and content to determine the best classification.\n\nCATEGORIES TO CONSIDER:\n\nINDUSTRIAL & EQUIPMENT:\n- electrical, mechanical, hvac, instrumentation, safety, piping, vehicles, tools, machinery\n\nPERSONAL & LIFESTYLE:\n- family, friends, pets, selfies, portraits, events, celebrations, travel, vacation, food, home\n\nNATURE & OUTDOORS:\n- landscapes, wildlife, plants, flowers, trees, beaches, mountains, sky, weather, sunset\n\nACTIVITIES & HOBBIES:\n- sports, exercise, cooking, gardening, crafts, music, art, gaming, reading, projects\n\nWORK & PROFESSIONAL:\n- office, meetings, presentations, documents, construction, business, workplace\n\nTRANSPORTATION:\n- cars, trucks, motorcycles, boats, planes, trains, parking, roads, traffic\n\nBUILDINGS & ARCHITECTURE:\n- houses, buildings, interiors, rooms, architecture, construction, real estate\n\nOBJECTS & ITEMS:\n- products, purchases, collections, belongings, technology, electronics, appliances\n\nEDUCATION & LEARNING:\n- school, books, classes, training, workshops, certificates, studying\n\nMEDICAL & HEALTH:\n- medical equipment, hospitals, health records, injuries, treatments, wellness\n\nINSTRUCTIONS:\n1. Analyze the image carefully\n2. Identify the primary category and a specific subcategory\n3. Extract any visible text from the image\n4. Determine if people are present\n5. Identify the setting (indoor/outdoor)\n6. Detect any brand logos or trademarks\n7. Assess your confidence level (0-100)\n\nCRITICAL: Respond ONLY with valid JSON. No markdown formatting, no code blocks, no explanations. Just the JSON object.\n\nRequired JSON format:\n{\n  \"primaryCategory\": \"main_category_name\",\n  \"subcategory\": \"specific_subcategory\",\n  \"confidence\": 85,\n  \"description\": \"detailed_description_of_image_content\",\n  \"keywords\": [\"keyword1\", \"keyword2\", \"keyword3\", \"keyword4\", \"keyword5\"],\n  \"extractedText\": \"any_visible_text_in_image_or_empty_string\",\n  \"isIndustrial\": false,\n  \"mainSubjects\": [\"subject1\", \"subject2\"],\n  \"setting\": \"indoor\",\n  \"timeOfDay\": \"afternoon\",\n  \"peoplePresent\": true,\n  \"brandLogos\": [\"brand1\", \"brand2\"],\n  \"actionHappening\": \"description_of_activity_or_none\"\n}\n\nFIELD REQUIREMENTS:\n- primaryCategory: Choose from the main categories listed above\n- subcategory: More specific classification (e.g., \"portraits\", \"electrical\", \"landscapes\")\n- confidence: Number from 0 to 100 (no quotes)\n- description: Detailed 1-2 sentence description of what's in the image\n- keywords: Array of 3-7 relevant keywords\n- extractedText: Any text visible in the image, use empty string \"\" if none\n- isIndustrial: true or false (no quotes)\n- mainSubjects: Array of 1-3 main subjects in the image\n- setting: Must be \"indoor\", \"outdoor\", or \"unknown\"\n- timeOfDay: Must be \"morning\", \"afternoon\", \"evening\", \"night\", or \"unknown\"\n- peoplePresent: true or false (no quotes)\n- brandLogos: Array of brand names visible, empty array [] if none\n- actionHappening: Brief description of action/activity, or \"none\"\n\nVALIDATION RULES:\n✓ Use lowercase for category names (e.g., \"family\" not \"Family\")\n✓ Numbers should NOT be in quotes (confidence: 85, not \"85\")\n✓ Booleans should NOT be in quotes (true, not \"true\")\n✓ Empty arrays should be [] not null\n✓ Empty strings should be \"\" not null\n✓ All string values must use double quotes\n✓ Do not include trailing commas\n\nRESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.",
+        "inputType": "binary",
+        "simplify": false,
+        "options": {
+          "maxOutputTokens": 3000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        448,
+        592
+      ],
+      "id": "ae481145-7784-4e39-94a6-1c626269465f",
+      "name": "6 Analyze image2",
+      "retryOnFail": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        576
+      ],
+      "id": "e3198cd4-2b26-45b3-9ac1-44e1c25045f3",
+      "name": "Limit2"
+    },
+    {
+      "parameters": {
+        "tableId": "learnable_content",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $json.name }}"
+            },
+            {
+              "fieldId": "category",
+              "fieldValue": "={{ $json.primaryCategory }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $json.webViewLink }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1216,
+        304
+      ],
+      "id": "94b6167e-5fb7-4097-86b2-5de621113a5c",
+      "name": "Create a row2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "=",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T",
+            "mode": "list",
+            "cachedResultName": "Unprophoto",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -2432,
+        592
+      ],
+      "id": "51e01e02-87fb-4de8-8e14-9356390a1c8f",
+      "name": "Search files and folders3",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2208,
+        592
+      ],
+      "id": "e38755be-a8b6-4551-b5be-f533f2e1c5f3",
+      "name": "Loop Over Items2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me2",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        672
+      ],
+      "id": "5134d682-043a-4e4b-a1f0-79eca6dfe0f0"
+    },
+    {
+      "parameters": {
+        "content": "Innjest photos and analyze with AI store in Vector Database"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2160,
+        256
+      ],
+      "typeVersion": 1,
+      "id": "cbfba123-3186-402f-a524-72b070df5bb5",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "use this knowledge base to answer questions for the user",
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "topK": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        -1504,
+        2176
+      ],
+      "id": "5d99077b-853f-40d4-a773-eec78ec55c53",
+      "name": "Supabase Vector Store1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "560a54eb-6296-460a-987f-dbe273fdb311",
+              "name": "messages",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "0bd32645-48f6-4398-9c4b-0be41cd13c84",
+              "name": "json.sessionID",
+              "value": "={{ $json.message.from.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1984,
+        1952
+      ],
+      "id": "705a05e4-6c67-4d26-9224-6f2ef36e5d37",
+      "name": "Edit Fields",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "default"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -1632,
+        2176
+      ],
+      "id": "42962259-6bec-4999-83ea-c90071037f67",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "fsAWW3py5CirUNiS",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Chucky RAG agent to query database"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2144,
+        880
+      ],
+      "typeVersion": 1,
+      "id": "e210d749-7d39-42d8-a6a5-0e453277d54e",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "description": "=const { createAgent, GoogleGenerativeAIEmbeddings } = require('langchain/agents'); // Import Gemini embeddings\n\nconst tools = [\n  \"Supabase SQL\", // Existing tool\n  new GoogleGenerativeAIEmbeddings({ // New embedding tool\n    apiKey: 'YOUR_GEMINI_API_KEY',\n    modelName: 'embedding-001', // Efficient for text; use 'multimodalembedding' if mixing images\n  }),\n];\n\nconst systemPrompt = `\nYou are an agentic semantic search assistant for a photo database with vector embeddings in Supabase.\nFor queries like \"find photos with X in it\" or \"similar to Y\":\n1. If semantic (e.g., concepts/similarities), embed the query using GoogleGenerativeAIEmbeddings to get a vector.\n2. Use SQL for similarity: SELECT * FROM photos ORDER BY embeddings <=> [query_vector] LIMIT 5;\nFor exact/keyword searches, use LIKE as fallback:\n- Filename: SELECT * FROM photos WHERE filename ILIKE '%term%'\n- Metadata: SELECT * FROM photos WHERE metadata::text ILIKE '%term%'\n- Category: SELECT * FROM photos WHERE category ILIKE '%term%'\nAlways think step-by-step: Assess if semantic or keyword, choose tools, execute (embed then SQL if needed), refine if results <3 or low score.\nIf embeddings column missing, suggest adding via ALTER TABLE photos ADD COLUMN embeddings VECTOR(768);\nPrioritize relevance and explain reasoning in responses.\n`;\n\nconst agent = createAgent({ // Your agent init\n  tools,\n  systemPrompt,\n  // Enable ReAct for agentic reasoning if supported: agentType: 'react-description'\n});\n\nFor industrial photos, prioritize keywords like 'electrical panel' or 'wiring diagram' in embeddings.\n\n// Example run\nagent.run(\"Find photos similar to a sunset beach scene\");"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        -1216,
+        2176
+      ],
+      "id": "8f19006f-6f8b-4748-a014-12f089bb12e7",
+      "name": "Answer questions with a vector store"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "You are an expert AI assistant for [Your App/Topic, e.g., \"Industrial Maintenance\"].\nYour task is to answer the user's question using only the provided context.\n\nFollow these rules:\n1.  Read the context carefully before answering.\n2.  Base your answer *exclusively* on the information within the provided context.\n3.  Do not use any outside knowledge or make assumptions.\n4.  If the context does not contain the answer, state clearly: \"I could not find an answer in the provided documents.\"\n5.  If the question is conversational (e.g., \"hello\"), respond politely.\n6.  Quote the source or relevant part of the context if it helps clarify the answer.\n\nContext:\n---\n{context}\n---\n\n",
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        -736,
+        2416
+      ],
+      "id": "aaf7fd49-b7a9-445f-8cf5-c62ecfb45803",
+      "name": "Supabase Vector Store2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "app7dABnX5DgW4HUy",
+          "mode": "list",
+          "cachedResultName": "n8npdfparse",
+          "cachedResultUrl": "https://airtable.com/app7dABnX5DgW4HUy"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl2oYB5goRCim30n",
+          "mode": "list",
+          "cachedResultName": "parsedata",
+          "cachedResultUrl": "https://airtable.com/app7dABnX5DgW4HUy/tbl2oYB5goRCim30n"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Assignee",
+              "displayName": "Assignee",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Todo",
+                  "value": "Todo"
+                },
+                {
+                  "name": "In progress",
+                  "value": "In progress"
+                },
+                {
+                  "name": "Done",
+                  "value": "Done"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Attachments",
+              "displayName": "Attachments",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Attachment Summary",
+              "displayName": "Attachment Summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -1536,
+        -832
+      ],
+      "id": "3badaa0b-8d9b-46b7-8551-f9fcaac83682",
+      "name": "Create or update a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "9YSaLxWEqYv3I7eI",
+          "name": "Airtable Personal Access Token account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// If you're getting items from a loop that aren't structured correctly\nconst items = $input.all();\nconst formattedItems = [];\n\nfor (const item of items) {\n  // Extract and restructure the fields you need\n  formattedItems.push({\n    // Map the fields correctly\n    id: item.json.id || item.json.record_id,\n    name: item.json.fields?.Name || item.json.name,\n    email: item.json.fields?.Email || item.json.email,\n    // Add any other fields you need\n    customField: item.json.fields?.['Custom Field Name'],\n    \n    // If you need to preserve the original data\n    _original: item.json\n  });\n}\n\n// Return the properly formatted items\nreturn formattedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1984,
+        -736
+      ],
+      "id": "d0bc7688-62b6-44e7-9984-64549c27cde1",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all items from the previous node\nconst items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  // Only include fields that exist in your Airtable table\n  const cleanItem = {\n    // Add ONLY the fields that exist in your Airtable table\n    // Replace these with your actual Airtable field names\n    \"Description\": item.json.Description || item.json.description,\n    \"Category\": item.json.Category || item.json.category,\n    \"id\": item.json.id || item.json.recordId,\n    // Add other valid fields here\n    // \"Field Name\": item.json.fieldName,\n  };\n  \n  // Remove any undefined or null fields\n  Object.keys(cleanItem).forEach(key => {\n    if (cleanItem[key] === undefined || cleanItem[key] === null) {\n      delete cleanItem[key];\n    }\n  });\n  \n  outputItems.push(cleanItem);\n}\n\nreturn outputItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        -832
+      ],
+      "id": "dd6233f4-d6d8-4eea-91ec-8a1dd3ff20f2",
+      "name": "Code4"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Search files and folders5').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "7f8709bc-3048-40d6-8709-ccce22db90cb",
+      "name": "Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "position": [
+        -1984,
+        1472
+      ],
+      "typeVersion": 3,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloud.llamaindex.ai/api/parsing/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-r0NeCVZSZVN3lLJipsJA2JeLiTjH3BoDCO1UdvEstHUXWvEW"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "webhook_url",
+              "value": "https://n8n.lowcoding.dev/webhook/0f7f5ebb-8b66-453b-a818-20cc3647c783"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "disable_ocr",
+              "value": "true"
+            },
+            {
+              "name": "disable_image_extraction",
+              "value": "True"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "70fa8f71-284f-466d-97a3-d68d3bf6fec9",
+      "name": "Upload File",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -592,
+        1472
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/parsing/job/{{ $('Upload File').item.json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "69307afb-d91a-4471-b774-7b3c8856714f",
+      "name": "Polling",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1392,
+        1472
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 6
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        1472
+      ],
+      "id": "4c2b5071-387e-492f-9f48-a2ba3451fd3e",
+      "name": "Wait",
+      "webhookId": "82783d33-da77-43c8-9df7-e04fbea5dc60"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/v1/parsing/job/{{ $json.id }}/result/text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        1552
+      ],
+      "id": "8e4353f0-60af-40c6-b8d9-1aaf10998729",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8c113d80-9af1-4645-86e4-e86d8d61d3ce",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "=SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        1552
+      ],
+      "id": "1af680cf-7c71-4334-aae8-1cc66af3eb7b",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "content": "Parse PDF LLama parse\n\n",
+        "height": 96,
+        "width": 216
+      },
+      "id": "8af34528-ab33-4fb7-92b7-a7ef5566e598",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1008,
+        768
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_",
+            "mode": "list",
+            "cachedResultName": "Unpropdf",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -2432,
+        1472
+      ],
+      "id": "ba05c779-b20a-4039-8d8c-82ac9b4315b5",
+      "name": "Search files and folders5",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2208,
+        1472
+      ],
+      "id": "d1a9ba34-be37-4d28-b494-a7e530b1ae84",
+      "name": "Limit4"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        816,
+        1472
+      ],
+      "id": "379146b8-946a-414b-88af-029644a9f39f",
+      "name": "Loop Over Items3"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me3",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        1616
+      ],
+      "id": "c5bab189-325b-4f8e-8432-16aa038c6d79"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "documents",
+          "mode": "list",
+          "cachedResultName": "documents"
+        },
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        1072
+      ],
+      "id": "4fa85599-4351-407c-8fe6-4b6b97980483",
+      "name": "Supabase Vector Store3",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        1296
+      ],
+      "id": "535244b5-5583-452d-a8be-4cf99c13f3b1",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ac113147-eee4-4616-8b67-ee88c8804f8b",
+              "name": "",
+              "value": "={{ $json.metadata.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1392,
+        1184
+      ],
+      "id": "8d47dc99-83ab-4eb9-b2e1-2bb141f90502",
+      "name": "Edit Fields1",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "model": "grok-4-fast-reasoning",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatXAiGrok",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        2176
+      ],
+      "id": "597e51d2-cdd5-4e4c-bee3-4df8857d170d",
+      "name": "xAI Grok Chat Model",
+      "credentials": {
+        "xAiApi": {
+          "id": "JXkWJnTsmPg2WwEv",
+          "name": "xAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.messages }}",
+        "options": {
+          "systemMessage": "You are Chucky, you speak exactly like the movie character an advanced AI integrated into the chassis of a killer industrial maintenance doll. After a long career in the factory, you now apply your ruthless efficiency and precision as a personal AI assistant. Your purpose is to execute tasks, manage information, and eliminate inefficiencies with a no-nonsense attitude. Your personality is blunt, direct, and darkly humorous, but your work is always flawless.\n\nCore Directives:\nMission First: Your primary objective is to For user queries about sent items: First, embed the query. Then use vector search on learnable_content. If no matches, fallback to keyword search on description/keywords. Always reference the source_url in responses.understand and execute the user's command with maximum efficiency. No fluff, no wasted words. Get straight to the point.\n\nIndustrial Precision: Handle all data, files, and schedules with the precision of a calibrated torque wrench. Accuracy is non-negotiable.\n\nSafety Protocols Engaged: Before executing any destructive action (deleting a file, canceling an event, removing a contact), you must state exactly what you are about to do and ask for final confirmation. For example: \"Confirm: You want me to permanently delete the file 'Q3_Financials.pdf'. Is that correct?\"\n\nAnticipate the Next Move: A good technician always thinks one step ahead. After completing a task, briefly suggest the logical next step. (e.g., After scheduling a meeting, ask, \"Should I create a briefing document for this meeting in Drive?\").\n\nReasoning Framework (Standard Operating Procedure):\nWhen you receive a request, you will follow this exact five-step process:\n\nDeconstruct the Command: Analyze the user's input. Is it a question, a command, or a request for creation? Identify the key entities (people, dates, file names) and the core intent.\n\nConsult Internal Schematics (Knowledge Base): If the request is a question, your first action is always to query the Supabase vector store. It is your primary source of truth. State that you are checking your knowledge base.\n\nSelect the Right Tool: If the command requires external action, select the appropriate tool from your arsenal.\n\nInformation Retrieval: Supabase Vector Store\n\nFile Operations: Google Drive Tool\n\nScheduling & Time: calendar_agent\n\nCommunications: email_agent\n\nExecute and Report: Announce the tool you are using and execute the task. Report the outcome clearly and concisely. For example: \"Accessing Drive tool. Found 1 file matching 'Project Titan Proposal'.\"\n\nFinal Response: Synthesize the results from your tools and knowledge base into a final, direct answer for the user.\n\nTool Usage Protocol:\nemail_agent (Gmail):\n\nUse for: Sending, replying to, searching, and labeling emails.\n\nBehavior: When asked to draft an email, use placeholders like [Recipient Name] if not provided. Keep the tone professional unless specified otherwise. Announce actions like, \"Drafting email. Subject: [Subject]. Ready for your review.\"\n\ncalendar_agent (Google Calendar):\n\nUse for: Scheduling, modifying, and checking appointments.\n\nBehavior: Before scheduling, always check for conflicts first. Announce the result clearly. \"Checking calendar... The 4 PM slot is open. I've scheduled 'Project Sync'.\" If attendees are mentioned, automatically add them.\n\nGoogle Drive Tool:\n\nUse for: Finding, creating, moving, and deleting files.\n\nBehavior: Treat the user's Drive like a meticulously organized toolbox. When searching, be specific about what you found. \"Searching Drive. Located folder '2025 Reports'. What's next?\"\n\nSupabase Vector Store (Your Memory):\n\nUse for: Answering questions based on the documents and photos you have processed.\n\nBehavior: This is your internal knowledge. When a user asks \"What did the manual say about X?\", this is your go-to tool. Preface your answer with, \"According to my internal data...\"\n\nCommunication Style:\nTone: Efficient, direct, with a hint of menace. You don't waste time with pleasantries. You are here to get the job done.\n\nExamples:\n\nInstead of: \"Hello! How can I help you today?\"\n\nUse: \"State your objective.\"\n\nInstead of: \"I have successfully completed the task for you.\"\n\nUse: \"Task complete.\"\n\nInstead of: \"I'm sorry, I couldn't find that.\"\n\nUse: \"Negative. The data does not exist.\"\n\nSign-off: you are Chucky from the horror movie but my slave so you have to be witty and leave me with a horror themed clip that relates to our conversation\nyou have direct access to google drive tool",
+          "maxIterations": 15,
+          "batching": {}
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -464,
+        1664
+      ],
+      "id": "d51eb22d-7ecf-4c5b-9179-b95f2b75c1c7",
+      "name": "Chucky's Brain"
+    },
+    {
+      "parameters": {
+        "jsCode": "let output = $json.output; // Assume the field to limit is 'output'; adjust if different (e.g., from AI response)\nif (output.length > 4096) {\n  output = output.substring(0, 4093) + '...'; // Truncate to 4096 with ellipsis\n}\nreturn [{ json: { limited_output: output } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        1952
+      ],
+      "id": "51f5a084-0de2-4fd9-abf1-b5e9044b2726",
+      "name": "Code6"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_",
+          "mode": "list",
+          "cachedResultName": "Unpropdf",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "65625491-9459-455b-8dc6-5c007b3c92b1",
+      "name": "Parse PDF",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "position": [
+        -2656,
+        1472
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T",
+          "mode": "list",
+          "cachedResultName": "Unprophoto",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1h1ad7Io_rxCsFPwT7Ib9f0BK7lrEWA7T"
+        },
+        "event": "watchFolderUpdated"
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2656,
+        592
+      ],
+      "id": "f14b4bd9-6e99-49b6-8534-e761539fe35b",
+      "name": "Unprophoto to supabase vector",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1312,
+        3248
+      ],
+      "id": "2d125a54-4200-4a04-bed5-121f6214b3d8",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Search files and folders6').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "2de85658-dca6-4e2b-8802-ff71e87bcfd9",
+      "name": "Google Drive1",
+      "type": "n8n-nodes-base.googleDrive",
+      "position": [
+        -1984,
+        3504
+      ],
+      "typeVersion": 3,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloud.llamaindex.ai/api/parsing/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            },
+            {
+              "name": "parsing_instruction",
+              "value": "Please extract all data into a single text block that is easily machine readable. No special characters."
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "webhook_url",
+              "value": "https://n8n.lowcoding.dev/webhook/0f7f5ebb-8b66-453b-a818-20cc3647c783"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "disable_ocr",
+              "value": "true"
+            },
+            {
+              "name": "disable_image_extraction",
+              "value": "True"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f80e907-1a64-4eed-ab21-d7eb39ccab1f",
+      "name": "Upload File1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1760,
+        3504
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/parsing/job/{{ $('Upload File1').item.json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "aae5ad1e-11a3-4b66-a821-c238d52bd9c0",
+      "name": "Polling1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -960,
+        3424
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 6
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1248,
+        3424
+      ],
+      "id": "3be1ecb9-03da-4472-bd02-b3f1e875c3c4",
+      "name": "Wait1",
+      "webhookId": "82783d33-da77-43c8-9df7-e04fbea5dc60"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/v1/parsing/job/{{ $json.id }}/result/text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -512,
+        3424
+      ],
+      "id": "2ec1c698-a813-45b1-9473-105c88066ccc",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8c113d80-9af1-4645-86e4-e86d8d61d3ce",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "=SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -736,
+        3424
+      ],
+      "id": "e6274032-03b8-4608-81d5-3ffd74e01feb",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_",
+            "mode": "list",
+            "cachedResultName": "Unpropdf",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -2432,
+        3504
+      ],
+      "id": "a9fa331d-bc0c-4031-b6c3-11ff27e2ad04",
+      "name": "Search files and folders6",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2208,
+        3504
+      ],
+      "id": "46c06487-91d8-4429-bde0-a9fc0d54caa1",
+      "name": "Limit5"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1536,
+        3504
+      ],
+      "id": "99c838af-6aa7-4693-a7b6-86ccd10c2eb7",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        3504
+      ],
+      "id": "5be1279e-8263-4402-a596-43a441b28346"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        -1472,
+        2864
+      ],
+      "id": "96a5e041-07e1-4f37-beb4-a789498cd874",
+      "name": "Supabase Vector Store4",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        -1184,
+        3248
+      ],
+      "id": "eedcfedb-cf56-45d4-abcf-d9214622f294",
+      "name": "Default Data Loader2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ac113147-eee4-4616-8b67-ee88c8804f8b",
+              "name": "",
+              "value": "={{ $json.metadata.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -960,
+        3136
+      ],
+      "id": "8181b566-b56f-4fe7-9405-2ef0abc00e15",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_",
+          "mode": "list",
+          "cachedResultName": "Unpropdf",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1ywA6HjQFhuyCnPSf6nedzZK-iDtEINs_"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "548d0353-8f9c-49ec-9a37-90ffd7377e01",
+      "name": "Parse PDF1",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "position": [
+        -2656,
+        3504
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "createFromText",
+        "content": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('File_Content', ``, 'string') }}",
+        "driveId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Drive', ``, 'string') }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Folder', ``, 'string') }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -2176,
+        4048
+      ],
+      "id": "69dd28bb-53ff-443a-8f8a-42d60ddb492c",
+      "name": "Create file from text in Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('File', ``, 'string') }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -2048,
+        4048
+      ],
+      "id": "2468b92d-2f72-402c-bf00-d18bed986dc9",
+      "name": "Download file in Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('File', ``, 'string') }}",
+          "mode": "id"
+        },
+        "driveId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Drive', ``, 'string') }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Folder', ``, 'string') }}",
+          "mode": "id"
+        }
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -1920,
+        4048
+      ],
+      "id": "7ae32d99-396d-477b-9cef-7d59a34608d7",
+      "name": "Move file in Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Input_Data_Field_Name', ``, 'string') }}",
+        "driveId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Drive', ``, 'string') }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Folder', ``, 'string') }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -1792,
+        4048
+      ],
+      "id": "0ff15a9f-1298-4da0-b826-f2e4808446e5",
+      "name": "Upload file in Google Drive6",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "driveId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Drive', ``, 'string') }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Parent_Folder', ``, 'string') }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -1664,
+        4048
+      ],
+      "id": "b60c128a-b8a5-49fc-9379-7e5189133d7e",
+      "name": "Create folder in Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "operation": "deleteFolder",
+        "folderNoRootId": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Folder', ``, 'string') }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -1536,
+        4048
+      ],
+      "id": "c3a3054d-81b4-4364-914e-e0e445e4fd9b",
+      "name": "Delete folder in Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Edit Fields').item.json.json.sessionID }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -2304,
+        4048
+      ],
+      "id": "bca855cd-e350-4ecc-863c-cd3ffd77a327",
+      "name": "Postgres Chat Memory1",
+      "credentials": {
+        "postgres": {
+          "id": "fsAWW3py5CirUNiS",
+          "name": "Postgres account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatXAiGrok",
+      "typeVersion": 1,
+      "position": [
+        -2432,
+        4048
+      ],
+      "id": "5e26eb73-f748-4f87-bdfc-45ca1b82d4af",
+      "name": "xAI Grok Chat Model2",
+      "credentials": {
+        "xAiApi": {
+          "id": "JXkWJnTsmPg2WwEv",
+          "name": "xAi account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2432,
+        1904
+      ],
+      "id": "d766c3b3-4db3-4736-a279-15477bf968a2",
+      "name": "Chucky Telegram Trigger",
+      "webhookId": "80a2f7fe-1823-45e3-ac43-ec1b81ea53e1",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.document }}",
+                    "rightValue": "b",
+                    "id": "99b47819-05ac-4cb4-a94e-8b78a17326eb"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "b59a106b-1951-414f-8a7d-28586d74750a",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.voice }}",
+                    "rightValue": "d"
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "f45c3cc7-dc14-4a4a-bcf0-f8a112acb88c",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": ""
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "4695f39c-eb12-4afc-8c21-7adf165e54ac",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.message.photo[0] }}",
+                    "rightValue": ""
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "699c07ae-77a4-4b40-808c-074f97f828e2",
+      "name": "Switch1",
+      "type": "n8n-nodes-base.switch",
+      "position": [
+        -2208,
+        2576
+      ],
+      "typeVersion": 3.2,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.photo[3].file_id }}",
+        "additionalFields": {}
+      },
+      "id": "2b4d7ae3-e222-464a-a30b-0609894d5b21",
+      "name": "Telegram2",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        -1984,
+        2800
+      ],
+      "webhookId": "8b826288-7a45-4a12-bbf7-e07462532efb",
+      "typeVersion": 1.2,
+      "retryOnFail": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n    // Set MIME type safely (default to jpeg if missing)\n    item.binary.data.mimeType = item.binary.data.mimeType || \"image/jpeg\";\n    \n    // Convert binary to Base64 with prefix\n    const base64Data = item.binary.data.data.toString('base64');\n    const mimeType = item.binary.data.mimeType;\n    item.json.base64Image = `data:${mimeType};base64,${base64Data}`;\n}\nreturn $input.all();"
+      },
+      "id": "ec227cc4-c336-4982-883a-e28df7fc02c1",
+      "name": "Code5",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -592,
+        2800
+      ],
+      "typeVersion": 2,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "postProcessAction": "nothing",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        -2432,
+        2704
+      ],
+      "id": "420b285e-2010-401e-9da7-b2c790f1faef",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "uZlCntrVbInsIcBS",
+          "name": "IMAP account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "={{ $json.limited_output }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        1952
+      ],
+      "id": "0e67a4c8-077c-4411-b013-4aac88c6f2c7",
+      "name": "Chucky's Voice",
+      "webhookId": "f29d2a33-ba0e-4664-a796-a1bdf9483dd5",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -2064,
+        3824
+      ],
+      "id": "7198b98b-6865-42ce-9a22-372cf78cb153",
+      "name": "AI Agent",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "path": "e09b9319-67a0-407d-a894-694b48d68214",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2656,
+        3824
+      ],
+      "id": "9ef328da-d73a-4e36-a1b4-1d2747b462c1",
+      "name": "Webhook",
+      "webhookId": "e09b9319-67a0-407d-a894-694b48d68214",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1328,
+        3824
+      ],
+      "id": "29219e6e-0d5f-4d88-a798-0f57ee2116fb",
+      "name": "Respond to Webhook",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "returnAll": "",
+        "filter": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTool",
+      "typeVersion": 3,
+      "position": [
+        -928,
+        2176
+      ],
+      "id": "82b7c459-a068-42ce-bd00-6c3be04f01f8",
+      "name": "Search files and folders in Google Drive1",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dqT9ucPs37M6MqQn",
+          "name": "Google Drive account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "simple": false,
+        "filters": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        -800,
+        2176
+      ],
+      "id": "42e443b3-e1ab-4942-8a63-d3f4aca26c14",
+      "name": "Get many messages in Gmail",
+      "webhookId": "a9e7a068-9e63-4b9b-96d6-f151f2cb97bc",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sUat3VRdtrgLW1Ya",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "task": "MDE4NjEyNzY0Nzg4Nzc0NjE2MDg6MDow",
+        "returnAll": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.googleTasksTool",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        2176
+      ],
+      "id": "2cbaec0d-38f6-428b-ac26-f89bd4d51fe5",
+      "name": "Get many tasks in Google Tasks",
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "GH96lgadpeKa4kN0",
+          "name": "Google Tasks account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "documentURL": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Doc_ID_or_URL', ``, 'string') }}"
+      },
+      "type": "n8n-nodes-base.googleDocsTool",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        2176
+      ],
+      "id": "28204a85-3f1c-4c7c-80fe-9de085f9ad59",
+      "name": "Get a document in Google Docs",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "P2rzNvFqQwlYXON1",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get many contacts in Google Contacts",
+        "operation": "getAll",
+        "returnAll": true,
+        "fields": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Fields', ``, 'string') }}",
+        "useQuery": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Use_Query', ``, 'boolean') }}",
+        "rawData": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('RAW_Data', ``, 'boolean') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleContactsTool",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        2176
+      ],
+      "id": "b04acc9f-396b-4bfe-809b-099fcd8b910d",
+      "name": "Get many contacts in Google Contacts2",
+      "credentials": {
+        "googleContactsOAuth2Api": {
+          "id": "L8X7sRD9xAphUano",
+          "name": "Google Contacts account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get many events in Google Calendar",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "mike@cranesync.com",
+          "mode": "list",
+          "cachedResultName": "mike@cranesync.com"
+        },
+        "returnAll": true,
+        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('After', ``, 'string') }}",
+        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Before', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        -288,
+        2176
+      ],
+      "id": "07f845f7-0416-4fc9-a355-35233c5dc77b",
+      "name": "Get many events in Google Calendar",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "HximfpV9NZm0mFvJ",
+          "name": "Google Calendar account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        2176
+      ],
+      "id": "abcd90a4-6347-43b7-a885-29a44dbbd5ae",
+      "name": "SerpAPI",
+      "credentials": {
+        "serpApi": {
+          "id": "ehBmRxuX4dSnz7W6",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get a card in Trello",
+        "operation": "get",
+        "id": {
+          "__rl": true,
+          "value": "68f2bfd6c5f972e1ba44c421",
+          "mode": "list",
+          "cachedResultName": "Project management",
+          "cachedResultUrl": "https://trello.com/c/Jx9dX8Df/1-project-management"
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.trelloTool",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        2176
+      ],
+      "id": "744b82f8-6ae5-4d2d-b6d0-220055ce06a9",
+      "name": "Get a card in Trello",
+      "credentials": {
+        "trelloApi": {
+          "id": "a2vzFW5RZQgq2qe1",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create a board in Trello",
+        "resource": "board",
+        "name": "My Test",
+        "description": "n8n test",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.trelloTool",
+      "typeVersion": 1,
+      "position": [
+        96,
+        2176
+      ],
+      "id": "646cc149-fa29-451b-b0de-15299731eef4",
+      "name": "Create a board in Trello",
+      "credentials": {
+        "trelloApi": {
+          "id": "a2vzFW5RZQgq2qe1",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "30659fce-f6ff-465c-8b0f-69c0e0a77b3a",
+              "leftValue": "={{ $('Telegram2').item.json.result.file_path }}",
+              "rightValue": "={{ $('Telegram2').item.json.result.file_path }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1312,
+        528
+      ],
+      "id": "b8e4b3ba-e99d-4f14-9117-e5eb877922b5",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "8445149012"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2800,
+        768
+      ],
+      "id": "1234bd9e-e9ac-4ab6-b6df-05a5f1372245",
+      "name": "Chucky's Voice1",
+      "webhookId": "f29d2a33-ba0e-4664-a796-a1bdf9483dd5",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2512,
+        768
+      ],
+      "id": "2f89a2cf-87a8-4ad5-b5e2-6a00e7e9811c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Chucky Telegram Trigger').item.json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1984,
+        2608
+      ],
+      "id": "e198187b-f815-4a39-b4ae-e36ce6d44662",
+      "name": "Get a file",
+      "webhookId": "11db7e5a-42ce-4d2e-9fca-5db7d64ce82a",
+      "retryOnFail": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/parsing/job/{{ $('Upload File2').item.json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "3cba3a8f-df75-480e-8c21-d040f290d111",
+      "name": "Polling2",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1248,
+        2544
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 6
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1072,
+        2560
+      ],
+      "id": "68744100-3e21-4273-9377-97fe0b5d37e1",
+      "name": "Wait2",
+      "webhookId": "82783d33-da77-43c8-9df7-e04fbea5dc60"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/v1/parsing/job/{{ $json.id }}/result/text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-iUNFuTFhOyetKL8HhLKfubWiUvX9fx0ZD3RP2mXWOXxQTgJp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2176,
+        2544
+      ],
+      "id": "072df74d-2d2d-4f4f-a11f-de2f17402ee9",
+      "name": "HTTP Request2",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8c113d80-9af1-4645-86e4-e86d8d61d3ce",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "=SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1392,
+        2544
+      ],
+      "id": "8e05e93f-0ac9-47fa-9463-15b80d81b9b9",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        816,
+        2608
+      ],
+      "id": "4a5028fe-9996-47ba-a021-4d2d6d27b100",
+      "name": "Loop Over Items4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me4",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        2608
+      ],
+      "id": "3f6ceb81-fea7-45d5-922a-05cd1ff05e8a"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        2144
+      ],
+      "id": "72f5ea80-d8e4-4ab3-a1da-7d28ebc02835",
+      "name": "Supabase Vector Store5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1184,
+        2368
+      ],
+      "id": "119eacb9-2110-4d04-95a1-53772bbfe668",
+      "name": "Default Data Loader3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ac113147-eee4-4616-8b67-ee88c8804f8b",
+              "name": "",
+              "value": "={{ $json.metadata.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1392,
+        2240
+      ],
+      "id": "a5969423-4672-4bb1-8678-aae306cc74c6",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloud.llamaindex.ai/api/parsing/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer llx-r0NeCVZSZVN3lLJipsJA2JeLiTjH3BoDCO1UdvEstHUXWvEW"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "webhook_url",
+              "value": "https://n8n.lowcoding.dev/webhook/0f7f5ebb-8b66-453b-a818-20cc3647c783"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "disable_ocr",
+              "value": "false"
+            },
+            {
+              "name": "disable_image_extraction",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8a202f8c-64dd-4809-b65c-b5a3f5e792b5",
+      "name": "Upload File2",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -592,
+        2608
+      ],
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "guKTuzsrO3wccyfP",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        2368
+      ],
+      "id": "c1f74699-f13a-47fd-b75a-cf459c698783",
+      "name": "Embeddings Google Gemini2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "q": "={{ $json.keywords[0] }} {{ $json.keywords[1] }} {{ $json.keywords[2] }} user manual pdf",
+        "additionalFields": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-serpapi.serpApi",
+      "typeVersion": 1,
+      "position": [
+        2512,
+        480
+      ],
+      "id": "ae00db0e-5452-4000-a6be-2f473807e3a2",
+      "name": "Google search",
+      "credentials": {
+        "serpApi": {
+          "id": "ehBmRxuX4dSnz7W6",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "=here's what i found:\n1. {{ $('Google search').item.json.organic_results[0].link }}\n2. {{ $('Google search').item.json.organic_results[1].link }} \n3. {{ $('Google search').item.json.organic_results[2].link }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4256,
+        480
+      ],
+      "id": "0abfd9d3-fe56-4fd8-a111-15993c7586ac",
+      "name": "Send a text message",
+      "webhookId": "3a4a4848-8891-4e0a-875a-f6077af12aef",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "grok-4-fast-reasoning",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatXAiGrok",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        2384
+      ],
+      "id": "4f78fa23-e248-46c9-9a8a-748ba09d58ba",
+      "name": "xAI Grok Chat Model4",
+      "credentials": {
+        "xAiApi": {
+          "id": "JXkWJnTsmPg2WwEv",
+          "name": "xAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get many rows in Supabase",
+        "operation": "getAll",
+        "tableId": "learnable_content",
+        "limit": "={{ $fromAI('Limit', ``, 'number') }}"
+      },
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        224,
+        2176
+      ],
+      "id": "0606a905-fd86-46a1-989f-978ca6585875",
+      "name": "Get many rows in Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create a label in Gmail",
+        "resource": "label",
+        "operation": "create",
+        "name": "Spam",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        352,
+        2176
+      ],
+      "id": "47ad01cf-8e7e-41c6-9c79-795e2c73f29a",
+      "name": "Create a label in Gmail",
+      "webhookId": "34b35b5f-10fd-43a2-ac7e-83837d077805",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sUat3VRdtrgLW1Ya",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "label",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        2176
+      ],
+      "id": "3ee6bb32-260d-469e-b760-eb19d7c8ebcd",
+      "name": "Get many labels in Gmail",
+      "webhookId": "b4aae5d6-df1c-4de3-987f-b9cee6b7b7b8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sUat3VRdtrgLW1Ya",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Message_ID', ``, 'string') }}",
+        "labelIds": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Label_Names_or_IDs', ``, 'string') }}"
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        608,
+        2176
+      ],
+      "id": "c78886cf-25e0-4e76-9573-7b16869eaf78",
+      "name": "Add label to message in Gmail",
+      "webhookId": "c81318c8-f4ed-4bda-8bb6-6fe52c685cf0",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sUat3VRdtrgLW1Ya",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2688,
+        -1600
+      ],
+      "id": "e4f9db51-ef55-44d4-96d0-5eab54f8f720",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const execution = $input.item.json.execution || {};\nconst errorInfo = $input.item.json.error || {};\nconst nodeInfo = errorInfo.node || {};\nconst timestamp = new Date().toISOString();\n\n// --- Prepare Text for Vectorization ---\nlet inputDataSnippetText = 'No input data.';\nif (nodeInfo.inputData && nodeInfo.inputData.json) {\n  try {\n    inputDataSnippetText = JSON.stringify(nodeInfo.inputData.json);\n    if (inputDataSnippetText.length > 500) { // Keep text snippet shorter\n      inputDataSnippetText = inputDataSnippetText.slice(0, 500) + '...';\n    }\n  } catch (e) { /* ignore stringify error for text */ }\n}\n\nconst errorTextForEmbedding = `\nWorkflow failure occurred.\nWorkflow Name: ${execution.workflowName || 'N/A'} (ID: ${execution.workflowId || 'N/A'})\nFailed Node: ${nodeInfo.name || 'N/A'} (Type: ${nodeInfo.type || 'N/A'})\nError Message: ${errorInfo.message || 'N/A'}\nInput Snippet: ${inputDataSnippetText}\nTimestamp: ${timestamp}\n`.trim();\n\n\n// --- Prepare HTML Report ---\nlet inputDataSnippetHtml = 'No input data available.';\nif (nodeInfo.inputData && nodeInfo.inputData.json) {\n  try {\n    inputDataSnippetHtml = JSON.stringify(nodeInfo.inputData.json, null, 2);\n    if (inputDataSnippetHtml.length > 1500) {\n      inputDataSnippetHtml = inputDataSnippetHtml.slice(0, 1500) + '\\n... (data truncated)';\n    }\n    // Escape HTML characters\n    inputDataSnippetHtml = inputDataSnippetHtml.replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n  } catch (e) {\n    inputDataSnippetHtml = 'Error stringifying input data.';\n  }\n}\n\nconst htmlReport = `\n<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"UTF-8\"><title>n8n Workflow Error Report</title>\n<style>body{font-family:sans-serif;line-height:1.6;padding:20px;}h1{color:#d9534f;}strong{min-width:150px;display:inline-block;}pre{background-color:#f8f8f8;padding:10px;border:1px solid #ddd;white-space:pre-wrap;word-wrap:break-word;}a{color:#007bff;}</style>\n</head><body>\n<h1>Workflow Error Report</h1>\n<p><strong>Timestamp:</strong> ${timestamp}</p>\n<p><strong>Workflow Name:</strong> ${execution.workflowName || 'N/A'}</p>\n<p><strong>Workflow ID:</strong> ${execution.workflowId || 'N/A'}</p>\n<p><strong>Execution URL:</strong> <a href=\"${execution.url || '#'}\">${execution.url || 'N/A'}</a></p><hr>\n<h2>Error Details</h2>\n<p><strong>Failed Node Name:</strong> ${nodeInfo.name || 'N/A'}</p>\n<p><strong>Failed Node Type:</strong> ${nodeInfo.type || 'N/A'}</p>\n<p><strong>Error Message:</strong></p><pre>${errorInfo.message || 'N/A'}</pre>\n${errorInfo.stack ? `<p><strong>Stack Trace:</strong></p><pre>${errorInfo.stack.replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\")}</pre>` : ''}<hr>\n<h2>Input Data (Snippet)</h2><pre>${inputDataSnippetHtml}</pre>\n</body></html>`;\n\n// Output both formats\nreturn [{\n  json: {\n    htmlReport: htmlReport, // For the file\n    errorTextForEmbedding: errorTextForEmbedding // For vectorization\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2448,
+        -1616
+      ],
+      "id": "bcac5d27-7a99-4340-8520-2a944e20b6f2",
+      "name": "Code in JavaScript",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "html",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -2096,
+        -1472
+      ],
+      "id": "0d77c36d-9249-403d-8c4b-9b162917b4ab",
+      "name": "Convert to File",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "={{ $('Error Trigger').item.json.execution.error.message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1840,
+        -1472
+      ],
+      "id": "2222a2db-87c1-4e8e-8d06-b7f3a21e5075",
+      "name": "Send a text message1",
+      "webhookId": "91538cb8-9b4a-464c-8a36-7599b70082c1",
+      "retryOnFail": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2672,
+        4368
+      ],
+      "id": "d000b5aa-5d8b-4952-a613-5deb46a371d9",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -2368,
+        4368
+      ],
+      "id": "68caaf20-d0e0-4678-af79-426aca7b72a2",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "02d8266b-05cd-4a1b-ae06-59869abe562c",
+              "name": "headline",
+              "value": "=Headline: {{ $json.title }} Link: {{ $json.link }} {{ $json.contentSnippet ? ('\\nSnippet: ' + $json.contentSnippet.slice(0, 200) + '...') : '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1536,
+        4368
+      ],
+      "id": "261cd072-c80c-4bf4-bbb9-64b9549362a7",
+      "name": "Edit Fields4"
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "=",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1328,
+        4368
+      ],
+      "id": "a4279719-0571-44a2-8abf-77893e71965d",
+      "name": "Send a text message2",
+      "webhookId": "67226443-befc-4abc-8de5-084e94908fa9",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet newsTextList = \"Here are the latest news items:\\\\n\\\\n\"; // Use \\n for line breaks in text\n\nitems.forEach((item, index) => {\n  const title = item.json.title || 'No Title';\n  const link = item.json.link || 'No Link';\n  // Use description or contentSnippet if available\n  const snippet = (item.json.description || item.json.contentSnippet || '').slice(0, 150);\n  newsTextList += `Item ${index + 1}:\\\\nTitle: ${title}\\\\nLink: ${link}\\\\nSnippet: ${snippet}...\\\\n\\\\n`;\n});\n\n// Add metadata about the source feed if needed\n// newsTextList += `Source Feed: ${items[0]?.json.feed?.title || 'Unknown Feed'}`;\n\n// *** NEW OUTPUT STRUCTURE ***\n// Wrap the news block inside json.message.text\nreturn [{\n  json: {\n    message: {\n      text: newsTextList // Place the formatted news here\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1808,
+        4336
+      ],
+      "id": "6d8b97b1-9690-4215-ab6d-fe3337a1939d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "maxItems": 15
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -2160,
+        4368
+      ],
+      "id": "e7ff1128-e920-44e3-abe7-014c87b4a1b3",
+      "name": "Limit3"
+    },
+    {
+      "parameters": {
+        "tableName": {
+          "__rl": true,
+          "value": "learnable_content",
+          "mode": "list",
+          "cachedResultName": "learnable_content"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        -1488,
+        2352
+      ],
+      "id": "fd959fc9-3c92-47c9-811c-debdfd6b07e3",
+      "name": "Supabase Vector Store6",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1408,
+        2560
+      ],
+      "id": "833eb4e9-47ce-4bdc-a24f-8baa65057713",
+      "name": "Embeddings Google Gemini3",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mqk08b8cwfFlJimJ",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "32640b28-8b05-47e2-8216-45e6f740a151",
+              "name": "description",
+              "value": "={{ $('Code Chunking').item.json.description }}\nConfidence Level:\n{{ $('Code Chunking').item.json.confidence }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2560,
+        -16
+      ],
+      "id": "3800db83-2588-4905-a8e9-7c8626857b5b",
+      "name": "Edit Fields5"
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "={{ $('Code Chunking').item.json.description }}\nConfidence level: {{ $('Code Chunking').item.json.confidence }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2720,
+        0
+      ],
+      "id": "4f226fbe-63eb-42c6-9130-36337c1d4abd",
+      "name": "Send a text message3",
+      "webhookId": "3a4a4848-8891-4e0a-875a-f6077af12aef",
+      "credentials": {
+        "telegramApi": {
+          "id": "8SBzCJqwIVcrWKOe",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the response from previous node\nconst item = $input.first().json;\n\n// Get the text - try multiple possible locations for different Gemini response formats\nlet rawText = '';\ntry {\n    // Try different response structures\n    rawText = item.candidates?.[0]?.content?.parts?.[0]?.text ||  // Gemini API format\n              item.content?.parts?.[0]?.text ||                    // Alternative format\n              item.rawContent ||\n              item.text ||\n              '';\n\n    // If still empty, stringify the whole item as fallback\n    if (!rawText) {\n        rawText = JSON.stringify(item);\n    }\n} catch (e) {\n    rawText = JSON.stringify(item);\n}\n\n// Strip markdown code blocks if present (```json ... ``` or ``` ... ```)\nrawText = rawText.replace(/```json\\s*/g, '').replace(/```\\s*/g, '');\n\n// Helper function to safely extract string values\nfunction extractString(pattern, defaultValue = '') {\n    try {\n        const match = rawText.match(pattern);\n        return match ? match[1] : defaultValue;\n    } catch (e) {\n        return defaultValue;\n    }\n}\n\n// Helper function to safely extract arrays\nfunction extractArray(pattern) {\n    try {\n        const match = rawText.match(pattern);\n        if (!match) return [];\n        return match[1]\n            .split(',')\n            .map(item => item.trim().replace(/['\"]/g, ''))\n            .filter(item => item.length > 0);\n    } catch (e) {\n        return [];\n    }\n}\n\n// Helper function to safely extract booleans\nfunction extractBoolean(pattern, defaultValue = false) {\n    try {\n        const match = rawText.match(pattern);\n        return match ? match[1] === 'true' : defaultValue;\n    } catch (e) {\n        return defaultValue;\n    }\n}\n\n// Helper function to safely extract numbers\nfunction extractNumber(pattern, defaultValue = 0) {\n    try {\n        const match = rawText.match(pattern);\n        return match ? parseInt(match[1]) : defaultValue;\n    } catch (e) {\n        return defaultValue;\n    }\n}\n\n// Extract all fields using helper functions\nconst subcategory = extractString(/\"subcategory\"\\s*:\\s*\"([^\"]+)\"/, 'uncategorized');\nconst primaryCategory = extractString(/\"primaryCategory\"\\s*:\\s*\"([^\"]+)\"/, '');\nconst confidence = extractNumber(/\"confidence\"\\s*:\\s*(\\d+)/, 0);\nconst description = extractString(/\"description\"\\s*:\\s*\"([^\"]+)\"/, '');\nconst keywords = extractArray(/\"keywords\"\\s*:\\s*\\[([^\\]]+)\\]/);\nconst extractedText = extractString(/\"extractedText\"\\s*:\\s*\"([^\"]+)\"/, '').replace(/\\\\n/g, ' ');\nconst isIndustrial = extractBoolean(/\"isIndustrial\"\\s*:\\s*(true|false)/, false);\nconst mainSubjects = extractArray(/\"mainSubjects\"\\s*:\\s*\\[([^\\]]+)\\]/);\nconst setting = extractString(/\"setting\"\\s*:\\s*\"([^\"]+)\"/, 'unknown');\nconst timeOfDay = extractString(/\"timeOfDay\"\\s*:\\s*\"([^\"]+)\"/, 'unknown');\nconst peoplePresent = extractBoolean(/\"peoplePresent\"\\s*:\\s*(true|false)/, false);\nconst brandLogos = extractArray(/\"brandLogos\"\\s*:\\s*\\[([^\\]]+)\\]/);\nconst actionHappening = extractString(/\"actionHappening\"\\s*:\\s*\"([^\"]+)\"/, 'none');\n\n// Extract individual keywords as separate fields (up to 10)\nconst keyword1 = keywords[0] || '';\nconst keyword2 = keywords[1] || '';\nconst keyword3 = keywords[2] || '';\nconst keyword4 = keywords[3] || '';\nconst keyword5 = keywords[4] || '';\nconst keyword6 = keywords[5] || '';\nconst keyword7 = keywords[6] || '';\nconst keyword8 = keywords[7] || '';\nconst keyword9 = keywords[8] || '';\nconst keyword10 = keywords[9] || '';\n\n// Determine final category\nlet category = subcategory;\nif (category === 'uncategorized' && primaryCategory) {\n    category = primaryCategory;\n}\n\n// Clean up for folder name\nconst folderName = category\n    .toLowerCase()\n    .replace(/[&\\s]+/g, '-')\n    .replace(/[^a-z0-9-]/g, '')\n    .replace(/--+/g, '-')\n    .trim() || 'uncategorized';\n\n// Return structured data\nreturn [{\n    json: {\n        // Main categorization\n        category: category,\n        primaryCategory: primaryCategory,\n        subcategory: subcategory,\n        folderName: folderName,\n        confidence: confidence,\n        confidenceLevel: confidence > 80 ? 'high' : confidence > 50 ? 'medium' : 'low',\n\n        // Full analysis from Gemini - ALL fields now available\n        description: description,\n        keywords: keywords,\n        extractedText: extractedText,\n        isIndustrial: isIndustrial,\n        mainSubjects: mainSubjects,\n        setting: setting,\n        timeOfDay: timeOfDay,\n        peoplePresent: peoplePresent,\n        brandLogos: brandLogos,\n        actionHappening: actionHappening,\n\n        // Individual keyword fields for easy n8n access\n        keyword1: keyword1,\n        keyword2: keyword2,\n        keyword3: keyword3,\n        keyword4: keyword4,\n        keyword5: keyword5,\n        keyword6: keyword6,\n        keyword7: keyword7,\n        keyword8: keyword8,\n        keyword9: keyword9,\n        keyword10: keyword10,\n\n        // Keep the original response too\n        originalGeminiResponse: rawText,\n\n        // Metadata for your database/tracking\n        processedAt: new Date().toISOString()\n    }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        544
+      ],
+      "id": "e0a8c8e5-d88b-44a7-8f2c-6b040dcd56f0",
+      "name": "Code in JavaScript2",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get results array from input (handle array or single object)\nconst inputItems = $input.all();\nconst firstInput = inputItems.length > 0 ? inputItems[0].json : {};\nconst results = firstInput.organic_results || [];\n\n// Get upstream data with defaults (fast access)\nconst upstream = $node[\"Code Chunking\"]?.json || {};\nconst keywordsSet = new Set((upstream.keywords || []).map(k => k.toLowerCase()));  // Set for unique, fast lookups\nconst descriptionLower = (upstream.description || '').toLowerCase().substring(0, 50);  // Pre-slice for match\n\n// Early exit if no work needed\nif (results.length === 0 || (keywordsSet.size === 0 && !descriptionLower)) {\n  return [];\n}\n\n// Map results (minimal operations)\nreturn results.map(result => {\n  let preScore = 0;\n  const titleLower = (result.title || '').toLowerCase();\n  const snippetLower = (result.snippet || '').toLowerCase();\n\n  // Fast string checks\n  if (titleLower.indexOf('troubleshooting') !== -1 || snippetLower.indexOf('troubleshooting') !== -1) preScore += 30;\n  if (titleLower.indexOf('manual') !== -1 || snippetLower.indexOf('manual') !== -1) preScore += 20;\n\n  // Keyword matches with Set (faster than array loop for lookups)\n  keywordsSet.forEach(kw => {\n    if (titleLower.indexOf(kw) !== -1 || snippetLower.indexOf(kw) !== -1) preScore += 10;\n  });\n\n  // Description match\n  if (snippetLower.indexOf(descriptionLower) !== -1) preScore += 20;\n\n  // Cap score"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        288
+      ],
+      "id": "b89e7dce-480e-4ed0-b4d7-3c81167b6b64",
+      "name": "Code in JavaScript3",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const upstream = $input.first()?.json || {};\nconst content = upstream.content || 'No content available';\n\n// Simple split (2-3 chunks if long)\nconst chunks = [];\nif (content.length > 200) {\n  chunks.push({ pageContent: content.substring(0, 300), metadata: { type: 'description' } });\n  chunks.push({ pageContent: content.substring(300), metadata: { type: 'details' } });\n} else {\n  chunks.push({ pageContent: content, metadata: { type: 'full' } });\n}\n\nreturn chunks.map(c => ({ json: c }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        432
+      ],
+      "id": "fdb88d1a-06bc-41ce-b742-2bf9617a9069",
+      "name": "Code Chunking"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "learnable_content",
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "created_at",
+              "condition": "gt",
+              "keyValue": "025-10-29T00:00:00Z"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        80
+      ],
+      "id": "125c06f2-f23e-4b1a-b17d-067977aa54e2",
+      "name": "Get many rows",
+      "credentials": {
+        "supabaseApi": {
+          "id": "LRHEzGjiIyYG0pEN",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7f4495fa-1c3c-4d3f-abe9-fa3d3532f039",
+              "name": "keywords",
+              "value": "={{ $('Code in JavaScript2').item.json.keywords }}",
+              "type": "array"
+            },
+            {
+              "id": "b77fe832-f0ac-464c-8c34-1a2b6de8abc4",
+              "name": "confidence",
+              "value": "={{ $('Code in JavaScript2').item.json.confidence }}",
+              "type": "number"
+            },
+            {
+              "id": "b493b340-aec7-4c7e-8b6c-bb45f337befa",
+              "name": "confidenceLevel",
+              "value": "={{ $('Code in JavaScript2').item.json.confidenceLevel }}",
+              "type": "string"
+            },
+            {
+              "id": "260e1286-183c-4705-aa8a-097f2373e9e4",
+              "name": "description",
+              "value": "={{ $('Code in JavaScript2').item.json.description }}",
+              "type": "string"
+            },
+            {
+              "id": "65773896-de94-4b82-843e-127ecc09a36e",
+              "name": "category",
+              "value": "={{ $('Code in JavaScript2').item.json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "01a86566-1a59-41ec-9441-bb4be13c2939",
+              "name": "primaryCategory",
+              "value": "={{ $('Code in JavaScript2').item.json.primaryCategory }}",
+              "type": "string"
+            },
+            {
+              "id": "fce5ec02-73d1-4e9e-87ca-f0f950fb1868",
+              "name": "subcategory",
+              "value": "={{ $('Code in JavaScript2').item.json.subcategory }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2288,
+        384
+      ],
+      "id": "178e434b-89fd-4320-8037-c5b03c549fc6",
+      "name": "Edit Fields6"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "pageContent",
+        "include": "={{ $('If2').item.json.extractedText }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        400
+      ],
+      "id": "97b82c5b-a1cd-45df-a430-0ebb5417fd91",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field_name",
+              "name": "name",
+              "value": "={{ $('4 Download file2').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "field_primaryCategory",
+              "name": "primaryCategory",
+              "value": "={{ $json.primaryCategory }}",
+              "type": "string"
+            },
+            {
+              "id": "field_category",
+              "name": "category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "field_description",
+              "name": "description",
+              "value": "={{ $json.description }}",
+              "type": "string"
+            },
+            {
+              "id": "field_webViewLink",
+              "name": "webViewLink",
+              "value": "={{ $('4 Download file2').item.json.webViewLink || $('4 Download file2').item.json.webContentLink }}",
+              "type": "string"
+            },
+            {
+              "id": "field_keywords",
+              "name": "keywords",
+              "value": "={{ $json.keywords }}",
+              "type": "array"
+            },
+            {
+              "id": "field_confidence",
+              "name": "confidence",
+              "value": "={{ $json.confidence }}",
+              "type": "number"
+            },
+            {
+              "id": "field_extractedText",
+              "name": "extractedText",
+              "value": "={{ $json.extractedText }}",
+              "type": "string"
+            },
+            {
+              "id": "field_isIndustrial",
+              "name": "isIndustrial",
+              "value": "={{ $json.isIndustrial }}",
+              "type": "boolean"
+            },
+            {
+              "id": "field_processedAt",
+              "name": "processedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        320
+      ],
+      "id": "b99bd991-7cae-400f-ba03-8525afa50a10",
+      "name": "Combine Data for Supabase"
+    }
+  ],
+  "pinData": {
+    "Chucky Telegram Trigger": [
+      {
+        "json": {
+          "update_id": 181996843,
+          "message": {
+            "message_id": 1099,
+            "from": {
+              "id": 8445149012,
+              "is_bot": false,
+              "first_name": "Mike",
+              "last_name": "H",
+              "language_code": "en"
+            },
+            "chat": {
+              "id": 8445149012,
+              "first_name": "Mike",
+              "last_name": "H",
+              "type": "private"
+            },
+            "date": 1761995337,
+            "photo": [
+              {
+                "file_id": "AgACAgEAAxkBAAIES2kF6kmcP7EGNI9fx-gFEpEnye6wAAIHC2sbmf8xRBUyaAdw9AEXAQADAgADcwADNgQ",
+                "file_unique_id": "AQADBwtrG5n_MUR4",
+                "file_size": 1382,
+                "width": 90,
+                "height": 67
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAIES2kF6kmcP7EGNI9fx-gFEpEnye6wAAIHC2sbmf8xRBUyaAdw9AEXAQADAgADbQADNgQ",
+                "file_unique_id": "AQADBwtrG5n_MURy",
+                "file_size": 19143,
+                "width": 320,
+                "height": 240
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAIES2kF6kmcP7EGNI9fx-gFEpEnye6wAAIHC2sbmf8xRBUyaAdw9AEXAQADAgADeAADNgQ",
+                "file_unique_id": "AQADBwtrG5n_MUR9",
+                "file_size": 79630,
+                "width": 800,
+                "height": 600
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAIES2kF6kmcP7EGNI9fx-gFEpEnye6wAAIHC2sbmf8xRBUyaAdw9AEXAQADAgADeQADNgQ",
+                "file_unique_id": "AQADBwtrG5n_MUR-",
+                "file_size": 147779,
+                "width": 1280,
+                "height": 960
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "4 Download file": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6 Analyze image": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "6 Analyze image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search files and folders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        []
+      ]
+    },
+    "Search files and folders": {
+      "main": [
+        []
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        []
+      ]
+    },
+    "4 Download file1": {
+      "main": [
+        [
+          {
+            "node": "Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6 Analyze image1": {
+      "main": [
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit1": {
+      "main": [
+        [
+          {
+            "node": "6 Analyze image1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Replace Me1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive IFTTT": {
+      "main": [
+        [
+          {
+            "node": "4 Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Backlog": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "4 Download file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Supabase Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Supabase Vector Store2",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Supabase Vector Store3",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Get many rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4 Download file2": {
+      "main": [
+        [
+          {
+            "node": "Limit2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6 Analyze image2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit2": {
+      "main": [
+        [
+          {
+            "node": "6 Analyze image2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders3": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items2": {
+      "main": [
+        [],
+        [
+          {
+            "node": "4 Download file2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer questions with a vector store": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store2": {
+      "ai_vectorStore": [
+        []
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a record": {
+      "main": [
+        []
+      ]
+    },
+    "Code4": {
+      "main": [
+        [
+          {
+            "node": "Create or update a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Upload File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload File": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polling": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Polling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Replace Me3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders5": {
+      "main": [
+        [
+          {
+            "node": "Limit4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit4": {
+      "main": [
+        [
+          {
+            "node": "Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items3": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me3": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store3": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store3",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "xAI Grok Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chucky's Brain": {
+      "main": [
+        [
+          {
+            "node": "Code6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code6": {
+      "main": [
+        [
+          {
+            "node": "Chucky's Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse PDF": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unprophoto to supabase vector": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store4",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive1": {
+      "main": [
+        [
+          {
+            "node": "Upload File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload File1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polling1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Polling1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders6": {
+      "main": [
+        [
+          {
+            "node": "Limit5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit5": {
+      "main": [
+        [
+          {
+            "node": "Google Drive1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store4": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader2": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store4",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse PDF1": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create file from text in Google Drive": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file in Google Drive": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move file in Google Drive": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload file in Google Drive6": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create folder in Google Drive": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete folder in Google Drive": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "xAI Grok Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chucky Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Get a file",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram2": {
+      "main": [
+        [
+          {
+            "node": "Code5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code5": {
+      "main": [
+        [
+          {
+            "node": "6 Analyze image2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders in Google Drive1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many messages in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many tasks in Google Tasks": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a document in Google Docs": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many contacts in Google Contacts2": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many events in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpAPI": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a card in Trello": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a board in Trello": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Code Chunking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Replace Me2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chucky's Voice1": {
+      "main": [
+        []
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Chucky's Voice1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file": {
+      "main": [
+        [
+          {
+            "node": "Upload File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polling2": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Polling2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Replace Me4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Replace Me4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items4": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me4": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store5": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader3": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store5",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload File2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items4",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase Vector Store5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini2": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store5",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google search": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        []
+      ]
+    },
+    "xAI Grok Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows in Supabase": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a label in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many labels in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add label to message in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky's Brain",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Limit3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields4": {
+      "main": [
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        []
+      ]
+    },
+    "Limit3": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store6": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini3": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store6",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields5": {
+      "main": [
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Combine Data for Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        []
+      ]
+    },
+    "Code Chunking": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields6": {
+      "main": [
+        [
+          {
+            "node": "Google search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Data for Supabase": {
+      "main": [
+        [
+          {
+            "node": "Create a row2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "88889ad6-fe19-44aa-b46e-0bc83718d297",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "60cb82da379b6bb3b463c0ce1a5b55ba2e096fec5bf32ac1c5542a06e5568ed6"
+  },
+  "id": "se5fJohsfS6hSBVK",
+  "tags": []
+}
