@@ -1,0 +1,426 @@
+{
+  "name": "Supabase Fix - Node Configurations",
+  "description": "Ready-to-use node configurations for fixing the Chucky workflow Supabase chunking issue",
+  "nodes": {
+    "combineDataForSupabase": {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "name",
+              "name": "name",
+              "value": "={{ $('4 Download file2').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "category",
+              "name": "category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "primaryCategory",
+              "name": "primaryCategory",
+              "value": "={{ $json.primaryCategory }}",
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "name": "description",
+              "value": "={{ $json.description }}",
+              "type": "string"
+            },
+            {
+              "id": "webViewLink",
+              "name": "webViewLink",
+              "value": "={{ $('4 Download file2').item.json.webViewLink || $('4 Download file2').item.json.webContentLink }}",
+              "type": "string"
+            },
+            {
+              "id": "keywords",
+              "name": "keywords",
+              "value": "={{ $json.keywords }}",
+              "type": "array"
+            },
+            {
+              "id": "confidence",
+              "name": "confidence",
+              "value": "={{ $json.confidence }}",
+              "type": "number"
+            },
+            {
+              "id": "extractedText",
+              "name": "extractedText",
+              "value": "={{ $json.extractedText }}",
+              "type": "string"
+            },
+            {
+              "id": "isIndustrial",
+              "name": "isIndustrial",
+              "value": "={{ $json.isIndustrial }}",
+              "type": "boolean"
+            },
+            {
+              "id": "processedAt",
+              "name": "processedAt",
+              "value": "={{ $json.processedAt }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [900, 544],
+      "name": "Combine Data for Supabase",
+      "notes": "This node combines AI parsed data with Google Drive file metadata before inserting into Supabase"
+    },
+    "createARow2_UPDATED": {
+      "parameters": {
+        "tableId": "photos",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $json.name }}"
+            },
+            {
+              "fieldId": "category",
+              "fieldValue": "={{ $json.primaryCategory }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $json.webViewLink }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1100, 544],
+      "name": "Create a row2",
+      "notes": "UPDATED: Now references $json fields directly instead of cross-node references"
+    },
+    "validateDataBeforeInsert": {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "name_exists",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "category_exists",
+              "leftValue": "={{ $json.primaryCategory }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "description_exists",
+              "leftValue": "={{ $json.description }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1000, 544],
+      "name": "Validate Data Before Insert",
+      "notes": "OPTIONAL: Add this node between Combine Data and Create a row2 to validate required fields"
+    },
+    "alternativeCodeNode": {
+      "parameters": {
+        "jsCode": "// Alternative approach using Code node instead of Set node\n// Place this AFTER \"Code in JavaScript2\" and BEFORE \"Create a row2\"\n\nconst items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  // Get parsed AI data from current item\n  const aiData = item.json;\n\n  // Get the original file data from the Google Drive download\n  // IMPORTANT: Adjust node name if different in your workflow\n  const fileData = $node[\"4 Download file2\"].item.json;\n\n  // Validate required fields exist\n  const hasRequiredFields = aiData.primaryCategory && aiData.description && fileData.name;\n\n  if (!hasRequiredFields) {\n    console.warn('Missing required fields for Supabase insert:', {\n      name: fileData.name,\n      hasCategory: !!aiData.primaryCategory,\n      hasDescription: !!aiData.description\n    });\n    // Skip this item or use defaults\n    continue;\n  }\n\n  // Combine all data needed for Supabase\n  output.push({\n    json: {\n      // Required fields for photos table\n      name: fileData.name,\n      category: aiData.primaryCategory || aiData.category || 'uncategorized',\n      description: aiData.description || 'No description available',\n      source_url: fileData.webViewLink || fileData.webContentLink || '',\n\n      // Optional: Include additional fields if your table has them\n      keywords: aiData.keywords || [],\n      confidence: aiData.confidence || 0,\n      extractedText: aiData.extractedText || '',\n      isIndustrial: aiData.isIndustrial || false,\n      setting: aiData.setting || 'unknown',\n      timeOfDay: aiData.timeOfDay || 'unknown',\n      peoplePresent: aiData.peoplePresent || false,\n      actionHappening: aiData.actionHappening || 'none',\n      processedAt: aiData.processedAt || new Date().toISOString(),\n\n      // Preserve original data for debugging\n      _aiConfidence: aiData.confidence,\n      _folderName: aiData.folderName\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 544],
+      "name": "Prepare Supabase Data",
+      "notes": "ALTERNATIVE: Use this Code node instead of Set node for more flexibility and validation"
+    }
+  },
+  "connectionChanges": {
+    "loopOverItems2": {
+      "description": "Update Loop Over Items2 connections",
+      "current": {
+        "main": [
+          [
+            {
+              "node": "Create a row2",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "4 Download file2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "updated": {
+        "main": [
+          [],
+          [
+            {
+              "node": "4 Download file2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "instructions": "Remove the first output connection (Output 0) that goes to Create a row2. Keep only Output 1 to 4 Download file2."
+    },
+    "codeInJavaScript2": {
+      "description": "Add new connection from Code in JavaScript2",
+      "current": {
+        "main": [
+          [
+            {
+              "node": "If2",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "updated": {
+        "main": [
+          [
+            {
+              "node": "If2",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Combine Data for Supabase",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "instructions": "Add a third output connection to the new 'Combine Data for Supabase' node"
+    },
+    "combineDataForSupabase": {
+      "description": "Connect new Combine Data node to Supabase",
+      "connections": {
+        "main": [
+          [
+            {
+              "node": "Create a row2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "instructions": "Connect Combine Data for Supabase output to Create a row2 input"
+    },
+    "createARow2": {
+      "description": "Update Create a row2 to loop back",
+      "current": {
+        "main": [[]]
+      },
+      "updated": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "instructions": "Connect Create a row2 output back to Loop Over Items2 input to close the loop properly"
+    }
+  },
+  "supabaseTableSchema": {
+    "tableName": "photos",
+    "description": "Recommended Supabase table schema to support all parsed AI fields",
+    "sqlCreate": "-- Existing fields\n-- name TEXT\n-- category TEXT\n-- description TEXT\n-- source_url TEXT\n\n-- Add these additional fields to enhance your photos table\nALTER TABLE photos ADD COLUMN IF NOT EXISTS keywords TEXT[];\nALTER TABLE photos ADD COLUMN IF NOT EXISTS confidence INTEGER;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS extracted_text TEXT;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS is_industrial BOOLEAN DEFAULT FALSE;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS setting TEXT;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS time_of_day TEXT;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS people_present BOOLEAN DEFAULT FALSE;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS action_happening TEXT;\nALTER TABLE photos ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ DEFAULT NOW();\nALTER TABLE photos ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();\n\n-- Add unique constraint to prevent duplicates\nALTER TABLE photos ADD CONSTRAINT unique_source_url UNIQUE (source_url);\n\n-- Add index for common queries\nCREATE INDEX IF NOT EXISTS idx_photos_category ON photos(category);\nCREATE INDEX IF NOT EXISTS idx_photos_confidence ON photos(confidence);\nCREATE INDEX IF NOT EXISTS idx_photos_is_industrial ON photos(is_industrial);",
+    "fields": [
+      {
+        "name": "name",
+        "type": "TEXT",
+        "required": true,
+        "description": "Filename from Google Drive"
+      },
+      {
+        "name": "category",
+        "type": "TEXT",
+        "required": true,
+        "description": "AI-determined primary category"
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "required": true,
+        "description": "AI-generated description"
+      },
+      {
+        "name": "source_url",
+        "type": "TEXT",
+        "required": true,
+        "description": "Google Drive webViewLink"
+      },
+      {
+        "name": "keywords",
+        "type": "TEXT[]",
+        "required": false,
+        "description": "Array of keywords extracted by AI"
+      },
+      {
+        "name": "confidence",
+        "type": "INTEGER",
+        "required": false,
+        "description": "AI confidence score (0-100)"
+      },
+      {
+        "name": "extracted_text",
+        "type": "TEXT",
+        "required": false,
+        "description": "Text extracted from image by AI"
+      },
+      {
+        "name": "is_industrial",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Whether image is industrial/technical"
+      },
+      {
+        "name": "setting",
+        "type": "TEXT",
+        "required": false,
+        "description": "indoor/outdoor/unknown"
+      },
+      {
+        "name": "time_of_day",
+        "type": "TEXT",
+        "required": false,
+        "description": "morning/afternoon/evening/night/unknown"
+      },
+      {
+        "name": "people_present",
+        "type": "BOOLEAN",
+        "required": false,
+        "description": "Whether people are in the image"
+      },
+      {
+        "name": "action_happening",
+        "type": "TEXT",
+        "required": false,
+        "description": "Description of action/activity"
+      },
+      {
+        "name": "processed_at",
+        "type": "TIMESTAMPTZ",
+        "required": false,
+        "description": "When the AI analysis was performed"
+      },
+      {
+        "name": "created_at",
+        "type": "TIMESTAMPTZ",
+        "required": false,
+        "description": "When the record was created"
+      }
+    ]
+  },
+  "implementationSteps": [
+    {
+      "step": 1,
+      "title": "Backup Current Workflow",
+      "action": "Export Chucky (30).json as backup before making changes"
+    },
+    {
+      "step": 2,
+      "title": "Add Combine Data Node",
+      "action": "Click '+' button after 'Code in JavaScript2' node, search for 'Set' node, add it with name 'Combine Data for Supabase'",
+      "config": "Use the 'combineDataForSupabase' configuration from this file"
+    },
+    {
+      "step": 3,
+      "title": "Update Loop Over Items2 Connections",
+      "action": "Click 'Loop Over Items2' node, delete the Output 0 connection to 'Create a row2'",
+      "verification": "Loop should only have Output 1 connected to '4 Download file2'"
+    },
+    {
+      "step": 4,
+      "title": "Connect Code in JavaScript2 to New Node",
+      "action": "Add connection from 'Code in JavaScript2' output to 'Combine Data for Supabase' input",
+      "note": "This will be the third output connection from Code in JavaScript2"
+    },
+    {
+      "step": 5,
+      "title": "Connect Combine Data to Supabase",
+      "action": "Connect 'Combine Data for Supabase' output to 'Create a row2' input"
+    },
+    {
+      "step": 6,
+      "title": "Close the Loop",
+      "action": "Connect 'Create a row2' output back to 'Loop Over Items2' input"
+    },
+    {
+      "step": 7,
+      "title": "Update Create a row2 Field References",
+      "action": "Click 'Create a row2' node, update all field values to use $json.* instead of cross-node references",
+      "config": "Use the 'createARow2_UPDATED' configuration from this file"
+    },
+    {
+      "step": 8,
+      "title": "Test with One Photo",
+      "action": "Upload a single test photo to Google Drive and verify workflow execution"
+    },
+    {
+      "step": 9,
+      "title": "Verify Supabase Data",
+      "action": "Check photos table - all fields should be populated correctly"
+    },
+    {
+      "step": 10,
+      "title": "Deploy to Production",
+      "action": "After successful testing, activate workflow for production use"
+    }
+  ]
+}
