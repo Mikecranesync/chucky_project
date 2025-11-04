@@ -1,7 +1,75 @@
 # Claude Code Integration with Chucky - Complete Implementation Guide
 
-**Date:** 2025-11-03
+**Date:** 2025-11-04 (Updated)
 **Purpose:** Enable Claude Code CLI to autonomously generate and maintain Chucky n8n workflows
+**Implementation:** Phased approach with low Claude usage per phase
+
+---
+
+## 🎯 Phased Implementation (RECOMMENDED)
+
+This guide provides a phased approach to implementing Claude Code integration. Each phase is designed to:
+- ✅ Complete in a single Claude Code session (low token usage)
+- ✅ Deliver a concrete, testable output
+- ✅ Commit changes to git immediately
+- ✅ Build incrementally on previous phases
+
+**Total Estimated Time**: ~2 hours spread across 6 phases
+**Total Estimated Cost**: ~15,000 tokens (spread across sessions)
+
+### Phase Summary
+
+| Phase | Deliverable | Time | Tokens | Status |
+|-------|-------------|------|--------|--------|
+| **Phase 1** | Directory structure & context files | 5 min | 500 | ✅ COMPLETE |
+| **Phase 2** | 6 slash commands created | 15 min | 2000 | ✅ COMPLETE |
+| **Phase 3** | 4 sub-agents configured | 15 min | 2000 | ✅ COMPLETE |
+| **Phase 4** | Master self-building prompt | 10 min | 1500 | ✅ COMPLETE |
+| **Phase 5** | Updated integration guide | 5 min | 1000 | 🔄 IN PROGRESS |
+| **Phase 6** | Validation & testing | 20 min | 2500 | ⏳ PENDING |
+
+### Implementation Status
+
+**Current State** (2025-11-04):
+- ✅ Directory structure created (`.claude/commands/`, `.claude/agents/`, `context/`)
+- ✅ Context files completed (project_overview.md, workflow_architecture.md, discord_config.md)
+- ✅ All 6 slash commands implemented
+- ✅ All 5 sub-agents defined (including n8n-workflow-expert)
+- ✅ Master self-building prompt created
+- 🔄 Integration guide being updated
+- ⏳ Validation and testing pending
+
+**Git History**:
+```bash
+306e5e3 - feat: add all 6 Claude Code slash commands
+00f187f - feat: add remaining 4 sub-agent definitions
+4693121 - feat: add master self-building prompt for Claude Code
+d406f20 - chore: prepare for slash command generation
+a0454a5 - feat: initialize Claude Code directory structure
+d1abfc9 - docs: add core context files for Claude Code
+```
+
+### How to Continue from Current State
+
+**Option 1: Resume with Existing Setup** (Recommended)
+1. Open terminal in project directory
+2. Run: `claude`
+3. Paste the master setup prompt from `MASTER_CLAUDE_SETUP_PROMPT.md`
+4. Claude Code will verify setup and enter operational mode
+
+**Option 2: Test a Specific Command**
+```bash
+claude
+# Then in Claude Code:
+/chucky-node-builder "Create a Code node that formats Discord responses with user mentions"
+```
+
+**Option 3: Validate Current Setup**
+```bash
+claude
+# Then in Claude Code:
+/chucky-workflow-validator ChuckyDiscordRAG.json
+```
 
 ---
 
