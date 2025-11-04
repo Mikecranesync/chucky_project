@@ -1,0 +1,48 @@
+Claude_CLI_semiauto_programmimng_setup
+
+This outline details the technical steps and file structure required to build and execute programmed AI agent workflows using Claude Code, focusing exclusively on the mechanics described in the sources.
+
+## Comprehensive Outline of Claude Code Programming Workflow
+
+### I. Environment Setup and Installation
+
+A. **Tool Selection and Requirement:** Claude Code is preferred as the core AI agent tool, comparable to mainline AI coding tools like Cursor.
+B. **Installation Command:** To install Claude Code, the user must navigate to `enthropic.com/cloudcode` and paste the provided command into the terminal.
+C. **Execution Environment:** Claude Code is designed to run in **any terminal**.
+    1.  The demonstrated setup utilizes Cursor (a fork of VS Code) as the development environment.
+    2.  Running the agent inside the development environment allows the user to observe the code running as it is being built.
+D. **Launching the Agent:** Once installed, the user types **`claude`** into the terminal and hits enter to activate the AI agent.
+
+### II. Defining Context and File Structure
+
+A. **Master Directory Creation:** A new folder must be created on the computer (e.g., in the Documents folder) to serve as the master directory for the Life OS.
+B. **Local Context Inclusion:** The master directory must contain local files that provide context for the agents.
+C. **Context File Format:** All contextual files necessary for the workflows must be **markdown files**.
+D. **Example Context Setup (Newsletter Researcher):**
+    1.  Create a specific folder within the master directory (e.g., a `newsletter` folder).
+    2.  Create a markdown file within that folder (e.g., `newsletter links.mmd`).
+    3.  Paste the relevant links (e.g., competitor newsletter URLs) into the `newsletter links.mmd` file.
+E. **Data Input Example (Brain Dump Analysis):** A folder is set up for daily notes and ideas, written as markdown files, which the agent scans for patterns.
+
+### III. System Prompting and Automated Agent Configuration
+
+A. **Defining the Master Prompt:** A master prompt must be formulated to instruct Claude Code on the specific system or slash command to build (e.g., "create a newsletter research system that analyzes competitor newsletters and writes drafts").
+    1.  *Alternative Prompt Generation:* The user can ask Claude to build the prompt for the sub-agents and slash command structure itself, leveraging Claude's creativity.
+B. **Triggering System Generation:** The master prompt is copied and pasted directly into the active Claude Code terminal.
+C. **Autonomous Structure Building:** Upon receiving the master prompt, Claude Code automatically begins to build its own necessary structure.
+    1.  **Directory Construction:** It builds its own directory for **commands** and a directory for **sub agents**.
+    2.  **Slash Command Definition:** It builds the custom slash command (e.g., `/newsletter researcher`). The slash command exists as a markdown file inside the commands directory.
+    3.  **Sub-Agent Definition:** It builds necessary specialized sub-agents (e.g., a content researcher sub agent and a newsletter writer sub agent).
+D. **Internal Prompting/Configuration:** Claude Code integrates external context to configure the sub-agents.
+    1.  It reads the user's provided context (e.g., past newsletters) to determine their specific "voice" and style.
+    2.  It uses this analysis to write its own detailed instructions and structures (prompts) for the sub-agents, effectively "prompt[ing] itself to build its own structure".
+
+### IV. Workflow Execution and Data Output
+
+A. **Command Execution:** To run the automated workflow, the user types the custom slash command (e.g., `/newsletter researcher` or `/daily brief`) into the terminal and hits enter.
+B. **Sub-Agent Activation:** The slash command "spin[s] up a sub agent" to perform the defined tasks.
+C. **Data Processing Tools:**
+    1.  The agent uses its built-in **web searching tool** to read the internet, scrape websites, fetch and analyze posts, and find current news without needing pre-fed publication links.
+    2.  The agent analyzes patterns across contextual files (e.g., scanning 30 days of brain dumps for recurring themes).
+D. **Output Generation:** The resulting content (e.g., newsletter draft, subject lines, priority updates, industry trends) is created and saved to a designated folder (e.g., a folder containing drafts).
+    1.  Outputs are often structured (e.g., the Weekly Dashboard output is well-structured and visible when opened in a tool like Obsidian).

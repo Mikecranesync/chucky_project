@@ -6,8 +6,8 @@
 **Application ID**: 1435031220009304084
 **Bot User ID**: 1435031220009304084
 
-**Bot Token**: `MTQzNTAzMTIyMDAwOTMwNDA4NA.G6k_Mo.2vNKlcDlvaU2Ad6SbJibfb6wasdfkV2iWt2Kpg`
-**Client Secret**: `GeBfl2HHV8zgr415c9YKOaMXBuBPSEzp`
+**Bot Token**: `YOUR_DISCORD_BOT_TOKEN_HERE`
+**Client Secret**: `YOUR_CLIENT_SECRET_HERE`
 
 > **Security Note**: These credentials are for development/testing. In production, store securely in environment variables or n8n's credential manager.
 
