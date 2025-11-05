@@ -1,0 +1,214 @@
+name: CD - Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.json'
+      - '!**/package*.json'
+      - '!**/tsconfig.json'
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  N8N_STAGING_URL: ${{ secrets.N8N_STAGING_URL }}
+  N8N_STAGING_API_KEY: ${{ secrets.N8N_STAGING_API_KEY }}
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging n8n
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ secrets.N8N_STAGING_URL }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Get changed workflow files
+        id: changed-files
+        uses: tj-actions/changed-files@v40
+        with:
+          files: |
+            Chucky*.json
+            *_Workflow.json
+            workflow*.json
+
+      - name: Display changed files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "## Changed Workflow Files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "- 📝 $file" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Deploy workflows to staging
+        if: steps.changed-files.outputs.any_changed == 'true'
+        id: deploy
+        run: |
+          if [ -z "$N8N_STAGING_URL" ] || [ -z "$N8N_STAGING_API_KEY" ]; then
+            echo "::notice::Staging deployment skipped - secrets not configured"
+            echo "## ⏭️ Staging Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Configure \`N8N_STAGING_URL\` and \`N8N_STAGING_API_KEY\` secrets to enable staging deployment." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "## 🚀 Staging Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          SUCCESS_COUNT=0
+          FAIL_COUNT=0
+          DEPLOYED_FILES=""
+
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "::group::Deploying $file to staging"
+
+            # Extract workflow ID if present (for updates)
+            WORKFLOW_ID=$(jq -r '.id // empty' "$file" 2>/dev/null)
+            WORKFLOW_NAME=$(jq -r '.name // "Unnamed"' "$file" 2>/dev/null)
+
+            echo "Workflow: $WORKFLOW_NAME"
+
+            if [ -z "$WORKFLOW_ID" ]; then
+              echo "Creating new workflow..."
+              METHOD="POST"
+              URL="$N8N_STAGING_URL/api/v1/workflows"
+            else
+              echo "Updating existing workflow ID: $WORKFLOW_ID"
+              METHOD="PUT"
+              URL="$N8N_STAGING_URL/api/v1/workflows/$WORKFLOW_ID"
+            fi
+
+            # Deploy workflow
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              -X "$METHOD" \
+              "$URL" \
+              -H "X-N8N-API-KEY: $N8N_STAGING_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @"$file" 2>&1)
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✅ Successfully deployed $file (HTTP $HTTP_CODE)"
+              echo "- ✅ **$file** - $WORKFLOW_NAME (HTTP $HTTP_CODE)" >> $GITHUB_STEP_SUMMARY
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+              DEPLOYED_FILES="$DEPLOYED_FILES\n- $file"
+            else
+              echo "::error file=$file::Deployment failed (HTTP $HTTP_CODE)"
+              echo "- ❌ **$file** - Failed (HTTP $HTTP_CODE)" >> $GITHUB_STEP_SUMMARY
+              echo "Response: $BODY"
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+
+            echo "::endgroup::"
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:** $SUCCESS_COUNT succeeded, $FAIL_COUNT failed" >> $GITHUB_STEP_SUMMARY
+
+          echo "success_count=$SUCCESS_COUNT" >> $GITHUB_OUTPUT
+          echo "fail_count=$FAIL_COUNT" >> $GITHUB_OUTPUT
+          echo "deployed_files<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$DEPLOYED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          if [ $FAIL_COUNT -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Create issue on deployment failure
+        if: failure() && steps.deploy.conclusion == 'failure'
+        uses: dacbd/create-issue-action@main
+        with:
+          token: ${{ github.token }}
+          title: "🚨 Staging Deployment Failed - ${{ github.sha }}"
+          body: |
+            ## Staging Deployment Failure
+
+            **Environment:** Staging
+            **Commit:** [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            **Workflow Run:** [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            **Triggered by:** @${{ github.actor }}
+            **Timestamp:** ${{ github.event.head_commit.timestamp }}
+
+            ### Failed Workflows
+            ${{ steps.changed-files.outputs.all_changed_files }}
+
+            ### Deployment Stats
+            - ✅ Succeeded: ${{ steps.deploy.outputs.success_count }}
+            - ❌ Failed: ${{ steps.deploy.outputs.fail_count }}
+
+            ### Troubleshooting Steps
+            - [ ] Check [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for HTTP error codes
+            - [ ] Verify staging n8n instance is accessible: `${{ secrets.N8N_STAGING_URL }}`
+            - [ ] Test API connectivity: `curl -H "X-N8N-API-KEY: ***" ${{ secrets.N8N_STAGING_URL }}/api/v1/workflows`
+            - [ ] Validate workflow JSON locally with `jq empty <file>.json`
+            - [ ] Check n8n API key expiration (rotate if >90 days)
+            - [ ] Review n8n server logs for detailed error messages
+            - [ ] Test workflow import manually in n8n UI
+
+            ### Rollback Instructions
+            If needed, revert the commit and re-deploy:
+            ```bash
+            git revert ${{ github.sha }}
+            git push origin main
+            ```
+
+            ### Next Steps
+            Once issue is resolved:
+            1. Fix the workflow or configuration
+            2. Commit the fix to a feature branch
+            3. Create a PR for review
+            4. After merge, automatic deployment will retry
+          labels: type:bug,priority:high,component:n8n,status:needs-triage,environment:staging
+          assignees: ${{ github.actor }}
+
+      - name: Comment on related PR
+        if: success() && steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find the PR that was merged to trigger this deployment
+            const { data: prs } = await github.rest.repos.listPullRequests({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 10
+            });
+
+            const mergedPR = prs.find(pr =>
+              pr.merge_commit_sha === context.sha && pr.merged_at
+            );
+
+            if (mergedPR) {
+              const successCount = '${{ steps.deploy.outputs.success_count }}';
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: mergedPR.number,
+                body: `## 🚀 Deployed to Staging\n\n` +
+                      `**${successCount}** workflow(s) successfully deployed to staging.\n\n` +
+                      `**Staging URL:** ${{ secrets.N8N_STAGING_URL }}\n\n` +
+                      `<details>\n<summary>Deployed Files</summary>\n\n` +
+                      `${{ steps.deploy.outputs.deployed_files }}\n\n</details>\n\n` +
+                      `**Next Step:** Test in staging, then deploy to production using IssueOps (label an issue with \`deploy-to-prod\`).`
+              });
+            }
+
+      - name: No workflows changed
+        if: steps.changed-files.outputs.any_changed != 'true'
+        run: |
+          echo "## ℹ️ No Deployment Needed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No workflow JSON files were changed in this commit." >> $GITHUB_STEP_SUMMARY

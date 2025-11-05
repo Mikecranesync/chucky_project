@@ -1,0 +1,399 @@
+{
+  "name": "User Management & Authentication",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "telegram-trigger-001",
+      "name": "Telegram Trigger",
+      "webhookId": "user-auth-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract user information from Telegram message\nconst message = $input.first().json.message;\nconst telegramUser = message.from;\n\nreturn {\n  json: {\n    telegram_id: telegramUser.id.toString(),\n    username: telegramUser.username || `user_${telegramUser.id}`,\n    first_name: telegramUser.first_name || '',\n    last_name: telegramUser.last_name || '',\n    chat_id: message.chat.id,\n    message_text: message.text || '',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "id": "extract-user-info-002",
+      "name": "Extract User Info"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "check-user-exists-003",
+      "name": "Check User Exists"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "user-exists-condition",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "id": "user-exists-check-004",
+      "name": "User Exists?"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "users",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $('Extract User Info').item.json.telegram_id }}"
+            },
+            {
+              "fieldId": "username",
+              "fieldValue": "={{ $('Extract User Info').item.json.username }}"
+            },
+            {
+              "fieldId": "first_name",
+              "fieldValue": "={{ $('Extract User Info').item.json.first_name }}"
+            },
+            {
+              "fieldId": "last_name",
+              "fieldValue": "={{ $('Extract User Info').item.json.last_name }}"
+            },
+            {
+              "fieldId": "email",
+              "fieldValue": ""
+            },
+            {
+              "fieldId": "subscription_status",
+              "fieldValue": "free"
+            },
+            {
+              "fieldId": "usage_count",
+              "fieldValue": 0
+            },
+            {
+              "fieldId": "last_login",
+              "fieldValue": "={{ $('Extract User Info').item.json.timestamp }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $('Extract User Info').item.json.timestamp }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 180],
+      "id": "create-new-user-005",
+      "name": "Create New User"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "users",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $('Extract User Info').item.json.telegram_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "last_login",
+              "fieldValue": "={{ $('Extract User Info').item.json.timestamp }}"
+            },
+            {
+              "fieldId": "username",
+              "fieldValue": "={{ $('Extract User Info').item.json.username }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 420],
+      "id": "update-last-login-006",
+      "name": "Update Last Login"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $('Extract User Info').item.json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "id": "get-user-details-007",
+      "name": "Get User Details"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "paid-condition-1",
+              "leftValue": "={{ $json[0].subscription_status }}",
+              "rightValue": "basic",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "paid-condition-2",
+              "leftValue": "={{ $json[0].subscription_status }}",
+              "rightValue": "pro",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "id": "check-subscription-008",
+      "name": "Check Subscription Status"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Extract User Info').item.json.chat_id }}",
+        "text": "=🎉 Welcome to Chucky! Your account has been created.\n\n**Free Plan**\n✅ Image categorization\n❌ PDF delivery (upgrade to unlock)\n\nSend me an image to try it out!\n\nType /upgrade to see premium plans.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 100],
+      "id": "welcome-new-user-009",
+      "name": "Welcome New User"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Extract User Info').item.json.chat_id }}",
+        "text": "=✅ **Authenticated** (Free Plan)\n\nUsage: {{ $('Get User Details').item.json[0].usage_count }} requests\n\nYou have access to:\n✅ Image categorization\n❌ PDF delivery\n\nUpgrade for unlimited features! Type /upgrade",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 420],
+      "id": "free-user-response-010",
+      "name": "Free User Response"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Extract User Info').item.json.chat_id }}",
+        "text": "=✅ **Authenticated** ({{ $('Get User Details').item.json[0].subscription_status.toUpperCase() }} Plan)\n\nUsage: {{ $('Get User Details').item.json[0].usage_count }} requests\n\nYou have FULL ACCESS to:\n✅ Image categorization\n✅ PDF delivery\n✅ Advanced features\n\nEnjoy your premium experience! 🚀",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 180],
+      "id": "paid-user-response-011",
+      "name": "Paid User Response"
+    },
+    {
+      "parameters": {
+        "content": "## User Authentication Workflow\n\n**Purpose**: Implements user registration and authentication for subscription-based access control.\n\n**Flow**:\n1. Telegram message triggers workflow\n2. Extract user info (telegram_id, username, etc.)\n3. Check if user exists in Supabase\n4. Create new user OR update last login\n5. Get user details and subscription status\n6. Route to free or paid user paths\n\n**Database Schema** (Supabase `users` table):\n- `id` (uuid, primary key)\n- `telegram_id` (text, unique)\n- `username` (text)\n- `first_name` (text)\n- `last_name` (text)\n- `email` (text)\n- `subscription_status` (text): 'free', 'basic', 'pro'\n- `usage_count` (integer)\n- `last_login` (timestamp)\n- `created_at` (timestamp)\n\n**Setup Required**:\n1. Create `users` table in Supabase\n2. Add Supabase credentials to n8n\n3. Add Telegram bot credentials to n8n\n4. Test with Telegram message",
+        "height": 460,
+        "width": 380,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 540],
+      "id": "documentation-note-012",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract User Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract User Info": {
+      "main": [
+        [
+          {
+            "node": "Check User Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check User Exists": {
+      "main": [
+        [
+          {
+            "node": "User Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Last Login",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create New User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New User": {
+      "main": [
+        [
+          {
+            "node": "Welcome New User",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get User Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Last Login": {
+      "main": [
+        [
+          {
+            "node": "Get User Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Details": {
+      "main": [
+        [
+          {
+            "node": "Check Subscription Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Subscription Status": {
+      "main": [
+        [
+          {
+            "node": "Paid User Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Free User Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

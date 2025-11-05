@@ -1,0 +1,358 @@
+{
+  "name": "Monthly Quota Reset Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 1 * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400],
+      "id": "schedule-trigger-001",
+      "name": "Monthly Reset (1st of month)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get stats before reset\nSELECT \n  COUNT(*) as total_users,\n  COUNT(CASE WHEN subscription_status = 'free' THEN 1 END) as free_users,\n  COUNT(CASE WHEN subscription_status = 'basic' THEN 1 END) as basic_users,\n  COUNT(CASE WHEN subscription_status = 'pro' THEN 1 END) as pro_users,\n  SUM(usage_count) as total_usage,\n  AVG(usage_count) as avg_usage,\n  COUNT(CASE WHEN usage_count >= \n    CASE subscription_status\n      WHEN 'free' THEN 5\n      WHEN 'basic' THEN 50\n      ELSE 999999\n    END\n  THEN 1 END) as users_at_limit\nFROM users;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 400],
+      "id": "get-pre-reset-stats-002",
+      "name": "Get Pre-Reset Stats"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create monthly usage report\nconst stats = $input.first().json[0];\nconst now = new Date();\nconst previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);\nconst monthName = previousMonth.toLocaleString('default', { month: 'long', year: 'numeric' });\n\nreturn {\n  json: {\n    report_month: monthName,\n    report_date: now.toISOString(),\n    \n    // User stats\n    total_users: stats.total_users,\n    free_users: stats.free_users,\n    basic_users: stats.basic_users,\n    pro_users: stats.pro_users,\n    \n    // Usage stats\n    total_requests: stats.total_usage,\n    avg_requests_per_user: parseFloat(stats.avg_usage).toFixed(2),\n    users_at_limit: stats.users_at_limit,\n    \n    // Conversion metrics\n    conversion_rate: ((stats.basic_users + stats.pro_users) / stats.total_users * 100).toFixed(2) + '%',\n    \n    // Format for notifications\n    summary: `📊 Monthly Report - ${monthName}\\n\\n` +\n             `👥 Users: ${stats.total_users} (Free: ${stats.free_users}, Basic: ${stats.basic_users}, Pro: ${stats.pro_users})\\n` +\n             `📈 Total Requests: ${stats.total_usage}\\n` +\n             `📊 Avg/User: ${parseFloat(stats.avg_usage).toFixed(2)}\\n` +\n             `🚫 At Limit: ${stats.users_at_limit} users\\n` +\n             `💰 Conversion: ${((stats.basic_users + stats.pro_users) / stats.total_users * 100).toFixed(2)}%`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400],
+      "id": "create-usage-report-003",
+      "name": "Create Usage Report"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "monthly_reports",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "report_month",
+              "fieldValue": "={{ $json.report_month }}"
+            },
+            {
+              "fieldId": "total_users",
+              "fieldValue": "={{ $json.total_users }}"
+            },
+            {
+              "fieldId": "free_users",
+              "fieldValue": "={{ $json.free_users }}"
+            },
+            {
+              "fieldId": "basic_users",
+              "fieldValue": "={{ $json.basic_users }}"
+            },
+            {
+              "fieldId": "pro_users",
+              "fieldValue": "={{ $json.pro_users }}"
+            },
+            {
+              "fieldId": "total_requests",
+              "fieldValue": "={{ $json.total_requests }}"
+            },
+            {
+              "fieldId": "avg_requests_per_user",
+              "fieldValue": "={{ $json.avg_requests_per_user }}"
+            },
+            {
+              "fieldId": "users_at_limit",
+              "fieldValue": "={{ $json.users_at_limit }}"
+            },
+            {
+              "fieldId": "report_date",
+              "fieldValue": "={{ $json.report_date }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "save-monthly-report-004",
+      "name": "Save Monthly Report"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Reset usage counts for all users\nUPDATE users \nSET \n  usage_count = 0,\n  last_reset_at = NOW()\nRETURNING \n  COUNT(*) as reset_count;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "id": "reset-usage-counts-005",
+      "name": "Reset All Usage Counts"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Archive usage tracking data (keep for analytics)\n-- Move data older than 90 days to archive table if needed\nINSERT INTO usage_tracking_archive \nSELECT * FROM usage_tracking \nWHERE timestamp < NOW() - INTERVAL '90 days';\n\n-- Optional: Delete old data from main table\n-- DELETE FROM usage_tracking WHERE timestamp < NOW() - INTERVAL '90 days';",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 400],
+      "id": "archive-old-data-006",
+      "name": "Archive Old Usage Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare notification about reset\nconst report = $('Create Usage Report').item.json;\nconst resetResult = $('Reset All Usage Counts').item.json[0];\n\nreturn {\n  json: {\n    reset_complete: true,\n    users_reset: resetResult.reset_count,\n    report_saved: true,\n    notification_message: `🔄 **Monthly Quota Reset Complete**\\n\\n` +\n                          report.summary + `\\n\\n` +\n                          `✅ ${resetResult.reset_count} user quotas have been reset\\n` +\n                          `📅 New billing cycle started\\n\\n` +\n                          `All users can now make requests again!`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400],
+      "id": "prepare-notification-007",
+      "name": "Prepare Reset Notification"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_ADMIN_TELEGRAM_ID",
+        "text": "={{ $json.notification_message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 300],
+      "id": "notify-admin-008",
+      "name": "Notify Admin (Telegram)"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "subscription_status",
+              "condition": "is",
+              "keyValue": "free"
+            },
+            {
+              "keyName": "usage_count",
+              "condition": "gte",
+              "keyValue": "4"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1780, 500],
+      "id": "get-heavy-free-users-009",
+      "name": "Get Heavy Free Users"
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2000, 500],
+      "id": "split-in-batches-010",
+      "name": "Split In Batches"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_id }}",
+        "text": "=🔄 **Your Monthly Quota Has Been Reset!**\n\nGood news! Your usage count has been reset to 0.\n\n**Your Plan:** Free\n**New Limit:** 5 requests this month\n\nWe noticed you're an active user! 🌟\n\n💡 **Want more?** Upgrade to unlock:\n⭐ **Basic** ($4.99/mo) - 50 requests\n🚀 **Pro** ($19.99/mo) - UNLIMITED\n\nType /upgrade to see all options!",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐ Upgrade to Basic\",\"callback_data\":\"upgrade_basic\"},{\"text\":\"🚀 Get Pro\",\"callback_data\":\"upgrade_pro\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2220, 500],
+      "id": "send-reset-upsell-011",
+      "name": "Send Reset + Upsell"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2440, 500],
+      "id": "wait-between-messages-012",
+      "name": "Wait (Rate Limit)"
+    },
+    {
+      "parameters": {
+        "content": "## Monthly Quota Reset Scheduler\n\n**Purpose**: Automatically reset user quotas on the 1st of each month\n\n**Schedule**: Runs at midnight (00:00) on the 1st day of every month\n**Cron**: `0 0 1 * *`\n\n**What It Does**:\n1. Collects usage statistics from previous month\n2. Creates monthly report and saves to database\n3. Resets all user usage_count to 0\n4. Archives old usage data (>90 days)\n5. Notifies admin via Telegram\n6. Sends upsell messages to heavy free users\n\n**Heavy Free Users**:\nFree users who used 4+ requests (80% of quota) receive a personalized upgrade message after reset.\n\n**Admin Setup**:\nReplace 'YOUR_ADMIN_TELEGRAM_ID' in the \"Notify Admin\" node with your actual Telegram ID.\n\n**Database Required**:\n- monthly_reports table\n- users.last_reset_at column\n- usage_tracking_archive table (optional)",
+        "height": 480,
+        "width": 400,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 700],
+      "id": "documentation-note-013",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Monthly Reset (1st of month)": {
+      "main": [
+        [
+          {
+            "node": "Get Pre-Reset Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pre-Reset Stats": {
+      "main": [
+        [
+          {
+            "node": "Create Usage Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Usage Report": {
+      "main": [
+        [
+          {
+            "node": "Save Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Monthly Report": {
+      "main": [
+        [
+          {
+            "node": "Reset All Usage Counts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset All Usage Counts": {
+      "main": [
+        [
+          {
+            "node": "Archive Old Usage Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archive Old Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reset Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reset Notification": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin (Telegram)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Heavy Free Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Heavy Free Users": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Send Reset + Upsell",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reset + Upsell": {
+      "main": [
+        [
+          {
+            "node": "Wait (Rate Limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (Rate Limit)": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

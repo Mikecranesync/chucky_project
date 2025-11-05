@@ -1,0 +1,590 @@
+{
+  "name": "Stripe Webhook Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "id": "stripe-webhook-001",
+      "name": "Stripe Webhook",
+      "webhookId": "stripe-payment-events"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Stripe webhook event\nconst event = $input.first().json;\n\nreturn {\n  json: {\n    event_id: event.id,\n    event_type: event.type,\n    event_created: event.created,\n    \n    // Extract relevant data based on event type\n    session_id: event.data?.object?.id || null,\n    customer_email: event.data?.object?.customer_email || null,\n    customer_id: event.data?.object?.customer || null,\n    subscription_id: event.data?.object?.subscription || null,\n    payment_intent: event.data?.object?.payment_intent || null,\n    amount_total: event.data?.object?.amount_total || 0,\n    currency: event.data?.object?.currency || 'usd',\n    payment_status: event.data?.object?.payment_status || 'unknown',\n    \n    // Metadata from checkout session\n    telegram_id: event.data?.object?.metadata?.telegram_id || null,\n    plan: event.data?.object?.metadata?.plan || null,\n    chat_id: event.data?.object?.metadata?.chat_id || null,\n    \n    // Full event for logging\n    raw_event: event\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "id": "parse-webhook-002",
+      "name": "Parse Webhook Event"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "payment-success",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "checkout.session.completed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "payment_success"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "payment-failed",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "checkout.session.expired",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "payment_failed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "subscription-created",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "customer.subscription.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "subscription_created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "subscription-deleted",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "customer.subscription.deleted",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "subscription_cancelled"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 400],
+      "id": "route-event-type-003",
+      "name": "Route Event Type"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "users",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "subscription_status",
+              "fieldValue": "={{ $json.plan }}"
+            },
+            {
+              "fieldId": "stripe_customer_id",
+              "fieldValue": "={{ $json.customer_id }}"
+            },
+            {
+              "fieldId": "stripe_subscription_id",
+              "fieldValue": "={{ $json.subscription_id }}"
+            },
+            {
+              "fieldId": "subscription_start_date",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 240],
+      "id": "update-user-subscription-004",
+      "name": "Update User Subscription"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "payment_sessions",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "session_id",
+              "condition": "is",
+              "keyValue": "={{ $json.session_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "payment_intent",
+              "fieldValue": "={{ $json.payment_intent }}"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 240],
+      "id": "update-payment-session-005",
+      "name": "Update Payment Session"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "invoices",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $json.telegram_id }}"
+            },
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $json.session_id }}"
+            },
+            {
+              "fieldId": "amount",
+              "fieldValue": "={{ $json.amount_total / 100 }}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{ $json.currency }}"
+            },
+            {
+              "fieldId": "plan_type",
+              "fieldValue": "={{ $json.plan }}"
+            },
+            {
+              "fieldId": "payment_intent",
+              "fieldValue": "={{ $json.payment_intent }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "paid"
+            },
+            {
+              "fieldId": "invoice_date",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 240],
+      "id": "create-invoice-006",
+      "name": "Create Invoice Record"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=🎉 **Payment Successful!**\n\nYour subscription has been activated!\n\n**Plan:** {{ $json.plan.toUpperCase() }}\n**Amount:** ${{ ($json.amount_total / 100).toFixed(2) }}\n**Status:** ✅ Active\n\nYou now have full access to all premium features!\n\n📧 Receipt sent to your email\n🔄 Subscription renews automatically\n\nStart using your premium features now!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1560, 240],
+      "id": "notify-payment-success-007",
+      "name": "Notify Payment Success"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "payment_sessions",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "session_id",
+              "condition": "is",
+              "keyValue": "={{ $json.session_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "expired"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "mark-session-expired-008",
+      "name": "Mark Session Expired"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⏱️ **Payment Link Expired**\n\nYour payment link has expired without completion.\n\nWould you like to try again?\n\nSend /upgrade to get a new payment link.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 400],
+      "id": "notify-payment-expired-009",
+      "name": "Notify Payment Expired"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "users",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "subscription_status",
+              "fieldValue": "free"
+            },
+            {
+              "fieldId": "subscription_end_date",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 560],
+      "id": "downgrade-user-010",
+      "name": "Downgrade User to Free"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "📢 **Subscription Cancelled**\n\nYour premium subscription has been cancelled.\n\n**Previous Plan:** {{ $json.plan }}\n**Status:** Reverted to Free\n\nYou can upgrade again anytime by sending /upgrade.\n\nThank you for being a premium member! 💙",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 560],
+      "id": "notify-cancellation-011",
+      "name": "Notify Cancellation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"received\": true, \"event_id\": \"{{ $('Parse Webhook Event').item.json.event_id }}\", \"timestamp\": \"{{ new Date().toISOString() }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 400],
+      "id": "respond-to-stripe-012",
+      "name": "Respond to Stripe"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "webhook_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "event_id",
+              "fieldValue": "={{ $json.event_id }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $json.event_type }}"
+            },
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $json.telegram_id }}"
+            },
+            {
+              "fieldId": "processed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify($json.raw_event) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 720],
+      "id": "log-webhook-event-013",
+      "name": "Log Webhook Event"
+    },
+    {
+      "parameters": {
+        "content": "## Stripe Webhook Handler\n\n**Purpose**: Process Stripe payment events and update user subscriptions\n\n**Events Handled**:\n1. checkout.session.completed - Payment successful\n2. checkout.session.expired - Payment link expired\n3. customer.subscription.created - New subscription\n4. customer.subscription.deleted - Subscription cancelled\n\n**Flow - Payment Success**:\n1. Receive webhook from Stripe\n2. Parse event data\n3. Update user subscription status\n4. Update payment session status\n5. Create invoice record\n6. Notify user via Telegram\n7. Respond to Stripe (200 OK)\n\n**Flow - Payment Failed**:\n1. Mark session as expired\n2. Notify user\n3. Respond to Stripe\n\n**Flow - Subscription Cancelled**:\n1. Downgrade user to free tier\n2. Notify user\n3. Log event\n\n**Setup Required**:\n1. Get webhook signing secret from Stripe dashboard\n2. Configure webhook endpoint URL in Stripe\n3. Add webhook URL to n8n (public URL required)\n4. Test with Stripe CLI or dashboard\n\n**Security Note**:\nVerify webhook signature using Stripe signing secret to prevent fake events.",
+        "height": 520,
+        "width": 400,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 900],
+      "id": "documentation-note-014",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Stripe Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook Event": {
+      "main": [
+        [
+          {
+            "node": "Route Event Type",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Webhook Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Event Type": {
+      "main": [
+        [
+          {
+            "node": "Update User Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Session Expired",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update User Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Downgrade User to Free",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User Subscription": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Session": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice Record": {
+      "main": [
+        [
+          {
+            "node": "Notify Payment Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Payment Success": {
+      "main": [
+        [
+          {
+            "node": "Respond to Stripe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Session Expired": {
+      "main": [
+        [
+          {
+            "node": "Notify Payment Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Payment Expired": {
+      "main": [
+        [
+          {
+            "node": "Respond to Stripe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Downgrade User to Free": {
+      "main": [
+        [
+          {
+            "node": "Notify Cancellation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Cancellation": {
+      "main": [
+        [
+          {
+            "node": "Respond to Stripe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

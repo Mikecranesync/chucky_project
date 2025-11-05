@@ -1,0 +1,310 @@
+{
+  "name": "Monitoring & Analytics Dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400],
+      "id": "daily-report-trigger-001",
+      "name": "Daily Report (8 AM)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- System Health Metrics\nSELECT\n  'system_health' as metric_type,\n  COUNT(DISTINCT u.telegram_id) as total_users,\n  COUNT(DISTINCT CASE WHEN u.last_request_at >= NOW() - INTERVAL '24 hours' THEN u.telegram_id END) as active_24h,\n  COUNT(DISTINCT CASE WHEN u.last_request_at >= NOW() - INTERVAL '7 days' THEN u.telegram_id END) as active_7d,\n  COUNT(DISTINCT CASE WHEN u.created_at >= NOW() - INTERVAL '24 hours' THEN u.telegram_id END) as new_users_24h,\n  SUM(CASE WHEN ut.timestamp >= NOW() - INTERVAL '24 hours' THEN 1 ELSE 0 END) as requests_24h,\n  COUNT(CASE WHEN qe.event_type = 'quota_exceeded' AND qe.timestamp >= NOW() - INTERVAL '24 hours' THEN 1 END) as quota_exceeded_24h,\n  COUNT(CASE WHEN ps.status = 'completed' AND ps.completed_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as payments_24h,\n  NOW() as report_time\nFROM users u\nLEFT JOIN usage_tracking ut ON u.telegram_id = ut.telegram_id\nLEFT JOIN quota_events qe ON u.telegram_id = qe.telegram_id\nLEFT JOIN payment_sessions ps ON u.telegram_id = ps.telegram_id;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 400],
+      "id": "get-health-metrics-002",
+      "name": "Get Health Metrics"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Revenue Metrics\nSELECT\n  'revenue' as metric_type,\n  COUNT(CASE WHEN subscription_status = 'free' THEN 1 END) as free_users,\n  COUNT(CASE WHEN subscription_status = 'basic' THEN 1 END) as basic_users,\n  COUNT(CASE WHEN subscription_status = 'pro' THEN 1 END) as pro_users,\n  COUNT(CASE WHEN subscription_status IN ('basic', 'pro') THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as conversion_rate,\n  SUM(CASE WHEN subscription_status = 'basic' THEN 4.99 ELSE 0 END) + \n  SUM(CASE WHEN subscription_status = 'pro' THEN 19.99 ELSE 0 END) as current_mrr,\n  (SELECT SUM(amount) FROM invoices WHERE invoice_date >= NOW() - INTERVAL '24 hours' AND status = 'paid') as revenue_24h,\n  (SELECT COUNT(*) FROM payment_sessions WHERE status = 'pending' AND expires_at > NOW()) as pending_checkouts\nFROM users;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 560],
+      "id": "get-revenue-metrics-003",
+      "name": "Get Revenue Metrics"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Performance Metrics\nSELECT\n  'performance' as metric_type,\n  AVG(usage_count) as avg_usage_per_user,\n  MAX(usage_count) as max_usage,\n  (SELECT COUNT(*) FROM users_at_risk) as users_approaching_limit,\n  (SELECT COUNT(*) FROM users_exceeded_quota) as users_blocked,\n  (SELECT COUNT(*) FROM webhook_logs WHERE processed_at >= NOW() - INTERVAL '24 hours') as webhooks_processed_24h,\n  (SELECT COUNT(*) FROM webhook_logs WHERE error_message IS NOT NULL AND processed_at >= NOW() - INTERVAL '24 hours') as webhook_errors_24h\nFROM users;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 720],
+      "id": "get-performance-metrics-004",
+      "name": "Get Performance Metrics"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all metrics into comprehensive report\nconst health = $('Get Health Metrics').item.json[0];\nconst revenue = $('Get Revenue Metrics').item.json[0];\nconst performance = $('Get Performance Metrics').item.json[0];\n\nconst now = new Date();\nconst reportDate = now.toISOString().split('T')[0];\n\n// Calculate health score (0-100)\nconst healthScore = Math.min(100, Math.round(\n  (health.active_24h / Math.max(1, health.total_users) * 50) + // 50% for DAU\n  (revenue.conversion_rate || 0) + // Up to 50% for conversion\n  (performance.webhook_errors_24h === 0 ? 10 : 0) // Bonus for no errors\n));\n\n// Determine status\nlet status = 'healthy';\nlet statusEmoji = '✅';\nif (healthScore < 50) {\n  status = 'critical';\n  statusEmoji = '🔴';\n} else if (healthScore < 70) {\n  status = 'warning';\n  statusEmoji = '⚠️';\n}\n\n// Format report\nconst report = {\n  date: reportDate,\n  timestamp: now.toISOString(),\n  health_score: healthScore,\n  status: status,\n  \n  // User metrics\n  total_users: health.total_users,\n  active_24h: health.active_24h,\n  active_7d: health.active_7d,\n  new_users_24h: health.new_users_24h,\n  dau_rate: ((health.active_24h / Math.max(1, health.total_users)) * 100).toFixed(2) + '%',\n  wau_rate: ((health.active_7d / Math.max(1, health.total_users)) * 100).toFixed(2) + '%',\n  \n  // Revenue metrics\n  free_users: revenue.free_users,\n  basic_users: revenue.basic_users,\n  pro_users: revenue.pro_users,\n  conversion_rate: (revenue.conversion_rate || 0).toFixed(2) + '%',\n  current_mrr: '$' + (revenue.current_mrr || 0).toFixed(2),\n  revenue_24h: '$' + (revenue.revenue_24h || 0).toFixed(2),\n  pending_checkouts: revenue.pending_checkouts,\n  \n  // Usage metrics\n  requests_24h: health.requests_24h,\n  quota_exceeded_24h: health.quota_exceeded_24h,\n  payments_24h: health.payments_24h,\n  avg_usage: parseFloat(performance.avg_usage_per_user || 0).toFixed(2),\n  max_usage: performance.max_usage,\n  users_at_risk: performance.users_approaching_limit,\n  users_blocked: performance.users_blocked,\n  \n  // System metrics\n  webhooks_processed: performance.webhooks_processed_24h,\n  webhook_errors: performance.webhook_errors_24h,\n  error_rate: performance.webhooks_processed_24h > 0 \n    ? ((performance.webhook_errors_24h / performance.webhooks_processed_24h) * 100).toFixed(2) + '%'\n    : '0%',\n  \n  // Formatted message for Telegram\n  telegram_message: `${statusEmoji} **Daily Report** - ${reportDate}\\n\\n` +\n    `📊 **Health Score:** ${healthScore}/100 (${status})\\n\\n` +\n    `👥 **Users**\\n` +\n    `• Total: ${health.total_users}\\n` +\n    `• Active (24h): ${health.active_24h} (${((health.active_24h / Math.max(1, health.total_users)) * 100).toFixed(1)}%)\\n` +\n    `• New (24h): ${health.new_users_24h}\\n\\n` +\n    `💰 **Revenue**\\n` +\n    `• MRR: $${(revenue.current_mrr || 0).toFixed(2)}\\n` +\n    `• 24h Revenue: $${(revenue.revenue_24h || 0).toFixed(2)}\\n` +\n    `• Conversion: ${(revenue.conversion_rate || 0).toFixed(1)}%\\n` +\n    `• Pending: ${revenue.pending_checkouts}\\n\\n` +\n    `📈 **Usage**\\n` +\n    `• Requests (24h): ${health.requests_24h}\\n` +\n    `• Quota Exceeded: ${health.quota_exceeded_24h}\\n` +\n    `• Users at Risk: ${performance.users_approaching_limit}\\n\\n` +\n    `⚡ **System**\\n` +\n    `• Webhooks: ${performance.webhooks_processed_24h}\\n` +\n    `• Errors: ${performance.webhook_errors_24h} (${performance.webhooks_processed_24h > 0 ? ((performance.webhook_errors_24h / performance.webhooks_processed_24h) * 100).toFixed(1) : 0}%)\\n`\n};\n\nreturn { json: report };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400],
+      "id": "create-daily-report-005",
+      "name": "Create Daily Report"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "daily_reports",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "report_date",
+              "fieldValue": "={{ $json.date }}"
+            },
+            {
+              "fieldId": "health_score",
+              "fieldValue": "={{ $json.health_score }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "total_users",
+              "fieldValue": "={{ $json.total_users }}"
+            },
+            {
+              "fieldId": "active_24h",
+              "fieldValue": "={{ $json.active_24h }}"
+            },
+            {
+              "fieldId": "requests_24h",
+              "fieldValue": "={{ $json.requests_24h }}"
+            },
+            {
+              "fieldId": "revenue_24h",
+              "fieldValue": "={{ parseFloat($json.revenue_24h.replace('$', '')) }}"
+            },
+            {
+              "fieldId": "current_mrr",
+              "fieldValue": "={{ parseFloat($json.current_mrr.replace('$', '')) }}"
+            },
+            {
+              "fieldId": "conversion_rate",
+              "fieldValue": "={{ parseFloat($json.conversion_rate.replace('%', '')) }}"
+            },
+            {
+              "fieldId": "webhook_errors",
+              "fieldValue": "={{ $json.webhook_errors }}"
+            },
+            {
+              "fieldId": "report_data",
+              "fieldValue": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "save-daily-report-006",
+      "name": "Save Daily Report"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_ADMIN_TELEGRAM_ID",
+        "text": "={{ $json.telegram_message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 300],
+      "id": "send-telegram-report-007",
+      "name": "Send Telegram Report"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "critical-health",
+              "leftValue": "={{ $json.health_score }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            },
+            {
+              "id": "high-error-rate",
+              "leftValue": "={{ $json.webhook_errors }}",
+              "rightValue": 10,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 500],
+      "id": "check-alerts-008",
+      "name": "Critical Issues?"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_ADMIN_TELEGRAM_ID",
+        "text": "=🚨 **CRITICAL ALERT**\\n\\nSystem health is below threshold!\\n\\n**Health Score:** {{ $('Create Daily Report').item.json.health_score }}/100\\n**Webhook Errors:** {{ $('Create Daily Report').item.json.webhook_errors }}\\n\\nImmediate attention required!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 580],
+      "id": "send-critical-alert-009",
+      "name": "Send Critical Alert"
+    },
+    {
+      "parameters": {
+        "content": "## Monitoring & Analytics Dashboard\n\n**Purpose**: Daily health monitoring and performance analytics\n\n**Schedule**: Runs daily at 8 AM\n**Cron**: `0 8 * * *`\n\n**Metrics Tracked**:\n1. User Metrics\n   - Total users\n   - DAU/WAU (Daily/Weekly Active Users)\n   - New signups\n   - Churn rate\n\n2. Revenue Metrics\n   - MRR (Monthly Recurring Revenue)\n   - Daily revenue\n   - Conversion rate\n   - Pending checkouts\n\n3. Usage Metrics\n   - Total requests\n   - Quota exceeded events\n   - Average usage per user\n   - Users approaching limits\n\n4. System Health\n   - Webhook processing\n   - Error rates\n   - Performance issues\n\n**Health Score Calculation**:\n- 0-49: Critical 🔴\n- 50-69: Warning ⚠️\n- 70-100: Healthy ✅\n\n**Alerts**:\n- Critical health score (<50)\n- High error rate (>10 errors/day)\n- Sends urgent Telegram notification\n\n**Admin Setup**:\nReplace 'YOUR_ADMIN_TELEGRAM_ID' in Telegram nodes with your actual ID.",
+        "height": 540,
+        "width": 400,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 800],
+      "id": "documentation-note-010",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Daily Report (8 AM)": {
+      "main": [
+        [
+          {
+            "node": "Get Health Metrics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Revenue Metrics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Performance Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Health Metrics": {
+      "main": [
+        [
+          {
+            "node": "Create Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Revenue Metrics": {
+      "main": [
+        [
+          {
+            "node": "Create Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Performance Metrics": {
+      "main": [
+        [
+          {
+            "node": "Create Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Daily Report": {
+      "main": [
+        [
+          {
+            "node": "Save Daily Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Critical Issues?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Daily Report": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Critical Issues?": {
+      "main": [
+        [
+          {
+            "node": "Send Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

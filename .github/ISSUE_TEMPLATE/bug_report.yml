@@ -1,0 +1,223 @@
+name: 🐛 Workflow Bug Report
+description: Report a bug or issue with an n8n workflow
+title: "[BUG] "
+labels: ["type:bug", "status:needs-triage"]
+assignees:
+  - hharp
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Workflow Bug Report
+
+        Use this template to report issues with existing n8n workflows in the Chucky project.
+
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Affected Workflow
+      description: Which workflow is experiencing the issue?
+      options:
+        - ChuckyDiscordRAG.json
+        - ChuckyTelegramLocal.json
+        - Payment_Management_Workflow.json
+        - User_Auth_Workflow.json
+        - Quota_Enforcement_Workflow.json
+        - Premium_Features_Workflow.json
+        - Monitoring_Analytics_Workflow.json
+        - Marketing_Retention_Workflow.json
+        - Security_Compliance_Workflow.json
+        - Stripe_Webhook_Handler.json
+        - Monthly_Quota_Reset.json
+        - Other (specify below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - Critical - Production down, users cannot use the system
+        - High - Major feature broken, significant user impact
+        - Medium - Feature degraded, workaround available
+        - Low - Minor issue, minimal impact
+      default: 2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Where is this bug occurring?
+      options:
+        - Production (live n8n instance)
+        - Staging (test instance)
+        - Local Development
+        - Unknown
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: node-failing
+    attributes:
+      label: Failing Node
+      description: Which node in the workflow is causing the issue?
+      placeholder: "e.g., Gemini Vision, Discord Webhook, Supabase Insert"
+
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error Message
+      description: Copy the exact error message from n8n (if available)
+      render: text
+      placeholder: |
+        Error: ECONNRESET - Connection reset by peer
+        At node: Gemini Vision
+        Workflow execution failed
+
+        NodeApiError: 401 - Unauthorized
+        At node: Supabase Vector Store
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug? Be specific.
+      placeholder: |
+        1. Trigger workflow via Discord command "/analyze"
+        2. Upload an image (JPG, >2MB)
+        3. Wait for processing
+        4. Error occurs at Gemini Vision node with timeout
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: |
+        The workflow should:
+        1. Receive the image from Discord
+        2. Analyze it with Gemini AI
+        3. Return a categorization and description
+        4. Store metadata in Supabase
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happens?
+      placeholder: |
+        The workflow:
+        1. Receives the image successfully
+        2. Times out at Gemini Vision node after 30 seconds
+        3. Returns error to Discord user
+        4. No data is stored
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample-data
+    attributes:
+      label: Sample Input Data
+      description: Provide sample data that triggers the bug (sanitize any sensitive information!)
+      placeholder: |
+        Discord message ID: 1234567890
+        Image URL: https://cdn.discordapp.com/attachments/...
+        File size: 2.4 MB
+        File type: image/jpeg
+
+  - type: input
+    id: frequency
+    attributes:
+      label: Frequency
+      description: How often does this occur?
+      placeholder: "e.g., Every time, 50% of the time, Intermittent, Only with large files"
+
+  - type: input
+    id: first-noticed
+    attributes:
+      label: When First Noticed
+      description: When did this bug start occurring?
+      placeholder: "e.g., 2025-11-01, After deployment on Monday, Always existed"
+
+  - type: input
+    id: n8n-version
+    attributes:
+      label: n8n Version
+      description: What version of n8n are you running?
+      placeholder: "e.g., 1.18.0"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Any relevant logs from n8n, Docker, or related services
+      render: text
+      placeholder: |
+        [2025-11-05 10:30:45] ERROR: Gemini API timeout after 30000ms
+        [2025-11-05 10:30:45] Stack trace:
+          at GeminiNode.execute (/usr/local/lib/node_modules/n8n/...)
+
+  - type: dropdown
+    id: user-impact
+    attributes:
+      label: User Impact
+      description: How many users are affected?
+      options:
+        - All users
+        - Most users (>50%)
+        - Some users (10-50%)
+        - Few users (<10%)
+        - Only admin/test users
+        - No users yet (caught before production)
+
+  - type: checkboxes
+    id: troubleshooting-done
+    attributes:
+      label: Troubleshooting Already Attempted
+      description: What have you already tried?
+      options:
+        - label: Checked n8n execution logs
+        - label: Verified credentials are valid
+        - label: Tested with different input data
+        - label: Restarted the workflow
+        - label: Restarted n8n instance
+        - label: Checked API rate limits
+        - label: Reviewed recent changes to workflow
+        - label: Tested in a different environment
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Temporary Workaround
+      description: Is there a temporary workaround being used?
+      placeholder: |
+        Currently manually processing failed images through n8n UI.
+        Or: No workaround found yet.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        - Screenshots
+        - Related issues
+        - Recent deployments
+        - Configuration changes
+        - Network issues

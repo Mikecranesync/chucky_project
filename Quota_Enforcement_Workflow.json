@@ -1,0 +1,335 @@
+{
+  "name": "Quota Enforcement & Usage Tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Quota Enforcement Workflow\n\n**Purpose**: Check user quotas before processing requests and enforce tier limits\n\n**Integration**: Add this as a sub-workflow at the start of your main Chucky workflow\n\n**Quota Limits by Tier**:\n- Free: 5 requests/month\n- Basic: 50 requests/month\n- Pro: Unlimited (999,999)\n\n**Flow**:\n1. Receive user data from parent workflow\n2. Get current usage from database\n3. Check against tier limit\n4. If under limit: Allow + increment usage\n5. If over limit: Block + send upsell message\n\n**Usage**:\nCall this workflow using \"Execute Workflow\" trigger from your main workflow, passing:\n- telegram_id\n- chat_id\n- action_type (e.g., 'image_analysis', 'pdf_generation')\n\nThis workflow returns:\n- allowed: true/false\n- remaining: number of requests left\n- limit: tier limit\n- message: status message",
+        "height": 500,
+        "width": 420,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 240],
+      "id": "documentation-001",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $json.workflowId }}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [620, 400],
+      "id": "workflow-trigger-002",
+      "name": "Execute Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [840, 400],
+      "id": "get-user-data-003",
+      "name": "Get User & Quota"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate quota limits and check if user can proceed\nconst user = $input.first().json[0];\nconst inputData = $('Execute Workflow Trigger').item.json;\n\n// Define tier limits\nconst tierLimits = {\n  free: 5,\n  basic: 50,\n  pro: 999999,\n  pay_per_use: 999999 // No limit for pay-per-use\n};\n\n// Get user's tier and usage\nconst tier = user.subscription_status || 'free';\nconst currentUsage = user.usage_count || 0;\nconst limit = tierLimits[tier] || 5;\nconst remaining = Math.max(0, limit - currentUsage);\n\n// Check if quota exceeded\nconst quotaExceeded = currentUsage >= limit && tier !== 'pro';\n\n// Calculate reset date (first of next month)\nconst now = new Date();\nconst resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);\nconst daysUntilReset = Math.ceil((resetDate - now) / (1000 * 60 * 60 * 24));\n\nreturn {\n  json: {\n    // User info\n    telegram_id: user.telegram_id,\n    chat_id: inputData.chat_id,\n    username: user.username,\n    \n    // Quota info\n    tier: tier,\n    current_usage: currentUsage,\n    limit: limit,\n    remaining: remaining,\n    quota_exceeded: quotaExceeded,\n    \n    // Action info\n    action_type: inputData.action_type || 'unknown',\n    \n    // Reset info\n    reset_date: resetDate.toISOString(),\n    days_until_reset: daysUntilReset,\n    \n    // Percentage used\n    usage_percentage: Math.round((currentUsage / limit) * 100)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 400],
+      "id": "calculate-quota-004",
+      "name": "Calculate Quota Status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "quota-check",
+              "leftValue": "={{ $json.quota_exceeded }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1280, 400],
+      "id": "check-quota-005",
+      "name": "Quota Available?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE users SET usage_count = usage_count + 1, last_request_at = NOW() WHERE telegram_id = '{{ $json.telegram_id }}' RETURNING usage_count, subscription_status",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1500, 280],
+      "id": "increment-usage-006",
+      "name": "Increment Usage Count"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "usage_tracking",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $('Calculate Quota Status').item.json.telegram_id }}"
+            },
+            {
+              "fieldId": "action_type",
+              "fieldValue": "={{ $('Calculate Quota Status').item.json.action_type }}"
+            },
+            {
+              "fieldId": "cost",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ JSON.stringify({ tier: $('Calculate Quota Status').item.json.tier, usage_before: $('Calculate Quota Status').item.json.current_usage }) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1720, 280],
+      "id": "log-usage-007",
+      "name": "Log Usage Event"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return success response to parent workflow\nconst quota = $('Calculate Quota Status').item.json;\nconst newCount = $('Increment Usage Count').item.json[0].usage_count;\n\nreturn {\n  json: {\n    allowed: true,\n    status: 'success',\n    quota_status: {\n      tier: quota.tier,\n      used: newCount,\n      limit: quota.limit,\n      remaining: quota.limit - newCount,\n      usage_percentage: Math.round((newCount / quota.limit) * 100)\n    },\n    message: `✅ Request allowed. ${quota.limit - newCount} requests remaining this month.`,\n    reset_date: quota.reset_date,\n    action_type: quota.action_type\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1940, 280],
+      "id": "return-success-008",
+      "name": "Return Success Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "usage-warning",
+              "leftValue": "={{ $json.usage_percentage }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1940, 480],
+      "id": "check-warning-threshold-009",
+      "name": "Check Warning (>80%)?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Calculate Quota Status').item.json.chat_id }}",
+        "text": "=⚠️ **Quota Warning**\n\nYou've used {{ $('Return Success Response').item.json.quota_status.used }}/{{ $('Return Success Response').item.json.quota_status.limit }} requests ({{ $('Return Success Response').item.json.quota_status.usage_percentage }}%)\n\n**{{ $('Return Success Response').item.json.quota_status.remaining }} requests remaining** this month.\n\nUpgrade to avoid hitting your limit!\n\n💡 Type /upgrade to see premium plans",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐ Upgrade Now\",\"callback_data\":\"upgrade\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2160, 560],
+      "id": "send-warning-010",
+      "name": "Send Quota Warning"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=🚫 **Quota Exceeded**\n\nYou've reached your monthly limit!\n\n**Your Plan:** {{ $json.tier.toUpperCase() }}\n**Limit:** {{ $json.limit }} requests/month\n**Used:** {{ $json.current_usage }}\n**Resets in:** {{ $json.days_until_reset }} days\n\n🎯 **Upgrade Options:**\n\n⭐ **Basic Plan** ($4.99/month)\n• 50 requests/month\n• Full PDF delivery\n• Priority support\n\n🚀 **Pro Plan** ($19.99/month)\n• UNLIMITED requests\n• Custom reports\n• Advanced analytics\n\n💰 **Pay-Per-Use** ($0.10/request)\n• No subscription needed\n• Perfect for occasional use\n\nType /upgrade to get started!",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐ Basic $4.99/mo\",\"callback_data\":\"upgrade_basic\"},{\"text\":\"🚀 Pro Unlimited\",\"callback_data\":\"upgrade_pro\"}],[{\"text\":\"💰 Pay Once $0.10\",\"callback_data\":\"pay_once\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1500, 520],
+      "id": "send-quota-exceeded-011",
+      "name": "Send Quota Exceeded"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return blocked response to parent workflow\nconst quota = $('Calculate Quota Status').item.json;\n\nreturn {\n  json: {\n    allowed: false,\n    status: 'quota_exceeded',\n    quota_status: {\n      tier: quota.tier,\n      used: quota.current_usage,\n      limit: quota.limit,\n      remaining: 0,\n      usage_percentage: 100\n    },\n    message: `🚫 Monthly quota exceeded (${quota.current_usage}/${quota.limit}). Upgrade to continue.`,\n    reset_date: quota.reset_date,\n    days_until_reset: quota.days_until_reset,\n    upgrade_url: '/upgrade',\n    action_type: quota.action_type,\n    blocked: true\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1720, 520],
+      "id": "return-blocked-012",
+      "name": "Return Blocked Response"
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get User & Quota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User & Quota": {
+      "main": [
+        [
+          {
+            "node": "Calculate Quota Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Quota Status": {
+      "main": [
+        [
+          {
+            "node": "Quota Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quota Available?": {
+      "main": [
+        [
+          {
+            "node": "Increment Usage Count",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Quota Exceeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Usage Count": {
+      "main": [
+        [
+          {
+            "node": "Log Usage Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Usage Event": {
+      "main": [
+        [
+          {
+            "node": "Return Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Success Response": {
+      "main": [
+        [
+          {
+            "node": "Check Warning (>80%)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Warning (>80%)?": {
+      "main": [
+        [
+          {
+            "node": "Send Quota Warning",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send Quota Exceeded": {
+      "main": [
+        [
+          {
+            "node": "Return Blocked Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

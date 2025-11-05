@@ -1,0 +1,424 @@
+{
+  "name": "Premium Features Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "id": "telegram-trigger-001",
+      "name": "Telegram Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse command for premium features\nconst message = $input.first().json.message;\nconst text = (message.text || '').toLowerCase().trim();\nconst telegramUser = message.from;\n\nreturn {\n  json: {\n    telegram_id: telegramUser.id.toString(),\n    chat_id: message.chat.id,\n    username: telegramUser.username || `user_${telegramUser.id}`,\n    message_text: text,\n    \n    // Premium feature commands\n    is_report_request: text.startsWith('/report') || text.includes('generate report'),\n    is_custom_training: text.startsWith('/train') || text.includes('train'),\n    is_analytics_request: text.startsWith('/analytics') || text.includes('analytics'),\n    is_integration_request: text.startsWith('/integrate') || text.includes('integration'),\n    is_premium_features: text.startsWith('/premium') || text.includes('premium features'),\n    \n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "id": "parse-premium-command-002",
+      "name": "Parse Premium Command"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 400],
+      "id": "get-user-tier-003",
+      "name": "Get User Tier"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "is-pro",
+              "leftValue": "={{ $json[0].subscription_status }}",
+              "rightValue": "pro",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-basic",
+              "leftValue": "={{ $json[0].subscription_status }}",
+              "rightValue": "basic",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "id": "check-premium-access-004",
+      "name": "Has Premium Access?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Premium Command').item.json.chat_id }}",
+        "text": "=🔒 **Premium Feature**\\n\\nThis feature is only available for Basic and Pro subscribers.\\n\\n**Your Plan:** Free\\n\\n**Premium Features Include:**\\n\\n⭐ **Basic Plan** ($4.99/month):\\n• Custom AI reports\\n• Advanced analytics\\n• Priority support\\n• 50 requests/month\\n\\n🚀 **Pro Plan** ($19.99/month):\\n• Everything in Basic\\n• UNLIMITED requests\\n• Custom integrations (Jira, Trello)\\n• Train with your own PDFs\\n• Dedicated support\\n• Early access to new features\\n\\nUpgrade now to unlock all premium features!\\n\\nType /upgrade to see plans.",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐ Upgrade to Basic\",\"callback_data\":\"upgrade_basic\"},{\"text\":\"🚀 Get Pro\",\"callback_data\":\"upgrade_pro\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 520],
+      "id": "send-upgrade-prompt-005",
+      "name": "Send Upgrade Prompt"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": false,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "report-req",
+                    "leftValue": "={{ $('Parse Premium Command').item.json.is_report_request }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "generate_report"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": false,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "analytics-req",
+                    "leftValue": "={{ $('Parse Premium Command').item.json.is_analytics_request }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "show_analytics"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "leftValue": "",
+                  "caseSensitive": false,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "premium-list",
+                    "leftValue": "={{ $('Parse Premium Command').item.json.is_premium_features }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "list_features"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1120, 280],
+      "id": "route-premium-feature-006",
+      "name": "Route Premium Feature"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get user's usage analytics\nSELECT\n  COUNT(*) as total_requests,\n  COUNT(DISTINCT DATE(timestamp)) as active_days,\n  json_agg(DISTINCT action_type) as action_types,\n  DATE_TRUNC('day', MIN(timestamp)) as first_request,\n  DATE_TRUNC('day', MAX(timestamp)) as last_request,\n  AVG(cost) as avg_cost_per_request,\n  SUM(cost) as total_cost\nFROM usage_tracking\nWHERE telegram_id = '{{ $('Parse Premium Command').item.json.telegram_id }}'\n  AND timestamp >= NOW() - INTERVAL '30 days';",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 180],
+      "id": "get-user-analytics-007",
+      "name": "Get User Analytics"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format analytics report\nconst analytics = $input.first().json[0];\nconst user = $('Get User Tier').item.json[0];\nconst chatId = $('Parse Premium Command').item.json.chat_id;\n\nconst report = {\n  chat_id: chatId,\n  message: `📊 **Your Analytics Report**\\n\\n` +\n           `**Account:** ${user.username}\\n` +\n           `**Plan:** ${user.subscription_status.toUpperCase()}\\n\\n` +\n           `**Last 30 Days:**\\n` +\n           `• Total Requests: ${analytics.total_requests || 0}\\n` +\n           `• Active Days: ${analytics.active_days || 0}\\n` +\n           `• Avg Cost/Request: $${(analytics.avg_cost_per_request || 0).toFixed(4)}\\n` +\n           `• Total Cost: $${(analytics.total_cost || 0).toFixed(2)}\\n\\n` +\n           `**Activity:**\\n` +\n           `• First Request: ${analytics.first_request || 'N/A'}\\n` +\n           `• Last Request: ${analytics.last_request || 'N/A'}\\n\\n` +\n           `**Feature Usage:**\\n` +\n           `${(analytics.action_types || []).map(type => `• ${type}`).join('\\n')}\\n\\n` +\n           `💡 Tip: Upgrade to Pro for unlimited requests and advanced analytics!`\n};\n\nreturn { json: report };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 180],
+      "id": "format-analytics-008",
+      "name": "Format Analytics"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 180],
+      "id": "send-analytics-009",
+      "name": "Send Analytics"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Premium Command').item.json.chat_id }}",
+        "text": "=🌟 **Premium Features**\\n\\nAs a {{ $('Get User Tier').item.json[0].subscription_status.toUpperCase() }} subscriber, you have access to:\\n\\n**📊 Analytics & Reporting**\\n• /analytics - View detailed usage analytics\\n• /report - Generate custom AI reports\\n• Advanced insights dashboard\\n\\n**🔗 Integrations** (Pro only)\\n• /integrate jira - Create Jira tickets from analyses\\n• /integrate trello - Add cards to Trello boards\\n• /integrate slack - Post to Slack channels\\n\\n**🎓 Custom Training** (Pro only)\\n• /train - Upload custom PDFs to train AI\\n• Personalized knowledge base\\n• Industry-specific responses\\n\\n**⚡ Priority Features**\\n• Faster response times\\n• Priority support queue\\n• Early access to new features\\n• Dedicated account manager (Pro)\\n\\n**📈 Advanced Analytics**\\n• Usage trends\\n• Cost tracking\\n• ROI analysis\\n• Export to CSV\\n\\nTry a command to get started!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 340],
+      "id": "send-features-list-010",
+      "name": "Send Premium Features List"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get recent usage for report generation\nSELECT\n  ut.action_type,\n  ut.timestamp,\n  ut.metadata\nFROM usage_tracking ut\nWHERE ut.telegram_id = '{{ $('Parse Premium Command').item.json.telegram_id }}'\n  AND ut.timestamp >= NOW() - INTERVAL '7 days'\nORDER BY ut.timestamp DESC\nLIMIT 50;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 40],
+      "id": "get-report-data-011",
+      "name": "Get Report Data"
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "modelId": {
+          "__rl": true,
+          "value": "grok-beta",
+          "mode": "list",
+          "cachedResultName": "grok-beta"
+        },
+        "text": "=Generate a professional weekly summary report based on this user's activity data:\\n\\n{{ JSON.stringify($json, null, 2) }}\\n\\nProvide:\\n1. Key activity highlights\\n2. Usage patterns\\n3. Recommendations for optimization\\n4. Insights and trends\\n\\nFormat as a professional report with clear sections.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.lmChatXAiGrok",
+      "typeVersion": 1,
+      "position": [1560, 40],
+      "id": "generate-ai-report-012",
+      "name": "Generate AI Report (Grok)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Premium Command').item.json.chat_id }}",
+        "text": "=📄 **Your Custom AI Report**\\n\\n{{ $json.content[0].text }}\\n\\n---\\n\\n*Report generated by Grok AI*\\n*Date: {{ new Date().toLocaleDateString() }}*",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 40],
+      "id": "send-ai-report-013",
+      "name": "Send AI Report"
+    },
+    {
+      "parameters": {
+        "content": "## Premium Features Hub\n\n**Purpose**: Provide value-added features for Basic and Pro subscribers\n\n**Access Control**:\n- Checks user subscription tier\n- Blocks free users with upgrade prompt\n- Routes premium users to features\n\n**Premium Features**:\n\n1. **Analytics Dashboard** (Basic+)\n   - 30-day usage reports\n   - Cost tracking\n   - Activity patterns\n   - Command: /analytics\n\n2. **AI-Generated Reports** (Basic+)\n   - Grok AI creates custom summaries\n   - Weekly activity reports\n   - Personalized insights\n   - Command: /report\n\n3. **Integrations** (Pro only)\n   - Jira ticket creation\n   - Trello card automation\n   - Slack notifications\n   - Command: /integrate\n\n4. **Custom Training** (Pro only)\n   - Upload custom PDFs\n   - Train vector store\n   - Industry-specific knowledge\n   - Command: /train\n\n**Value Proposition**:\n- Basic: Analytics + Reports = Justify $4.99/mo\n- Pro: All features + Integrations = Justify $19.99/mo\n\n**Stickiness**:\nPremium features increase retention by providing unique value that justifies subscription cost.",
+        "height": 560,
+        "width": 400,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 700],
+      "id": "documentation-note-014",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Premium Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Premium Command": {
+      "main": [
+        [
+          {
+            "node": "Get User Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Tier": {
+      "main": [
+        [
+          {
+            "node": "Has Premium Access?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Premium Access?": {
+      "main": [
+        [
+          {
+            "node": "Route Premium Feature",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Upgrade Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Premium Feature": {
+      "main": [
+        [
+          {
+            "node": "Get Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get User Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Premium Features List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Analytics": {
+      "main": [
+        [
+          {
+            "node": "Format Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Analytics": {
+      "main": [
+        [
+          {
+            "node": "Send Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Report Data": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Report (Grok)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Report (Grok)": {
+      "main": [
+        [
+          {
+            "node": "Send AI Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

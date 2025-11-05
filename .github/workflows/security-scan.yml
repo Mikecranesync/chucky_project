@@ -1,0 +1,296 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  issues: write
+  security-events: write
+
+jobs:
+  scan-secrets:
+    name: Scan for Exposed Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive scanning
+
+      - name: TruffleHog Secret Scanning
+        id: trufflehog
+        continue-on-error: true
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+      - name: Advanced credential pattern check
+        id: credential-check
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          FINDINGS=0
+          CRITICAL=0
+          WARNING=0
+
+          # Check for API keys in workflow JSON files
+          echo "### API Key Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE '"(apiKey|api_key|token)"\s*:\s*"[a-zA-Z0-9_\-\.]{30,}"' *.json 2>/dev/null | grep -v '"credentialId"' | grep -v '""'; then
+            echo "- ⚠️ Potential API keys detected in JSON files" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            WARNING=$((WARNING + 1))
+          else
+            echo "- ✅ No API keys found in JSON files" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for hardcoded passwords
+          echo "### Password Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE '"password"\s*:\s*".{5,}"' *.json 2>/dev/null | grep -v '""' | grep -v '"credentialId"'; then
+            echo "- 🔴 **CRITICAL:** Hardcoded passwords detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No hardcoded passwords found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for Bearer tokens
+          echo "### Bearer Token Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE 'Bearer [a-zA-Z0-9_\-\.]{20,}' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** Bearer tokens detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No Bearer tokens found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for Google API keys
+          echo "### Google API Key Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE 'AIza[0-9A-Za-z_\-]{35}' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** Google API keys detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No Google API keys found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for OpenAI keys
+          echo "### OpenAI Key Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE 'sk-[a-zA-Z0-9]{48}' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** OpenAI API keys detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No OpenAI keys found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for Stripe keys
+          echo "### Stripe Key Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE '(sk|pk)_(test|live)_[a-zA-Z0-9]{24,}' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** Stripe API keys detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No Stripe keys found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for Discord tokens
+          echo "### Discord Token Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE 'M[A-Za-z0-9]{23}\.[A-Za-z0-9]{6}\.[A-Za-z0-9_\-]{27}' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** Discord bot tokens detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No Discord tokens found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for Supabase keys
+          echo "### Supabase Key Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE 'eyJ[a-zA-Z0-9_\-]{30,}\.eyJ[a-zA-Z0-9_\-]{30,}' . 2>/dev/null | grep -v '.github' | head -5; then
+            echo "- ⚠️ Potential Supabase JWT tokens detected" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            WARNING=$((WARNING + 1))
+          else
+            echo "- ✅ No Supabase keys found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Check for database connection strings
+          echo "### Database Connection String Scan" >> $GITHUB_STEP_SUMMARY
+          if grep -rE '(postgres|mysql|mongodb)://[^:]+:[^@]+@' . 2>/dev/null; then
+            echo "- 🔴 **CRITICAL:** Database credentials in connection strings" >> $GITHUB_STEP_SUMMARY
+            FINDINGS=$((FINDINGS + 1))
+            CRITICAL=$((CRITICAL + 1))
+          else
+            echo "- ✅ No database connection strings with credentials" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:** $FINDINGS findings ($CRITICAL critical, $WARNING warnings)" >> $GITHUB_STEP_SUMMARY
+
+          echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "warning=$WARNING" >> $GITHUB_OUTPUT
+
+      - name: Check workflow file permissions
+        id: permissions-check
+        run: |
+          echo "### 🔐 Workflow Permissions Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          PERMISSION_ISSUES=0
+
+          for workflow in .github/workflows/*.yml; do
+            if [ -f "$workflow" ]; then
+              # Check if workflow has overly permissive permissions
+              if grep -q "permissions:" "$workflow"; then
+                if grep -A 5 "permissions:" "$workflow" | grep -q "write-all\|contents: write"; then
+                  echo "- ⚠️ \`$(basename $workflow)\` has broad write permissions" >> $GITHUB_STEP_SUMMARY
+                  PERMISSION_ISSUES=$((PERMISSION_ISSUES + 1))
+                fi
+              else
+                echo "- ℹ️ \`$(basename $workflow)\` uses default permissions" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+
+          if [ $PERMISSION_ISSUES -eq 0 ]; then
+            echo "- ✅ All workflows have appropriate permissions" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "permission_issues=$PERMISSION_ISSUES" >> $GITHUB_OUTPUT
+
+      - name: Create security issue for critical findings
+        if: steps.credential-check.outputs.critical > 0
+        uses: dacbd/create-issue-action@main
+        with:
+          token: ${{ github.token }}
+          title: "🔒 CRITICAL: Exposed Credentials Detected - ${{ github.run_id }}"
+          body: |
+            ## 🚨 Critical Security Alert
+
+            **Severity:** CRITICAL
+            **Scan Date:** ${{ github.event.repository.updated_at }}
+            **Triggered by:** ${{ github.event_name }}
+            **Scan Run:** [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ### Summary
+            - **Critical Findings:** ${{ steps.credential-check.outputs.critical }}
+            - **Warnings:** ${{ steps.credential-check.outputs.warning }}
+            - **Total Findings:** ${{ steps.credential-check.outputs.findings }}
+
+            ### Immediate Actions Required
+
+            ⚠️ **DO NOT share this issue publicly or in screenshots**
+
+            1. **Identify Exposed Credentials**
+               - Review the [scan logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (private access only)
+               - Determine which credentials are exposed
+               - Assess the scope and severity
+
+            2. **Rotate Credentials Immediately**
+               - [ ] Identify all exposed API keys, tokens, or passwords
+               - [ ] Generate new credentials for affected services
+               - [ ] Update GitHub Secrets with new values
+               - [ ] Update n8n credential manager with new values
+               - [ ] Revoke old credentials in service dashboards
+
+            3. **Remove from Repository**
+               - [ ] Remove hardcoded credentials from files
+               - [ ] Use GitHub Secrets (`${{ '{{' }} secrets.KEY_NAME {{ '}}' }}`)
+               - [ ] Use n8n credential references instead of hardcoded values
+               - [ ] Commit and push the cleaned code
+
+            4. **Verify and Monitor**
+               - [ ] Re-run security scan to confirm removal
+               - [ ] Monitor service logs for unauthorized access
+               - [ ] Review recent activity for each affected service
+               - [ ] Document incident and remediation steps
+
+            ### Services That May Be Affected
+            - Google Gemini API
+            - xAI Grok
+            - Discord Bot
+            - Supabase
+            - Stripe
+            - n8n API
+            - Brave Search
+            - Any custom integrations
+
+            ### How to Use GitHub Secrets
+
+            **In GitHub Actions:**
+            ```yaml
+            env:
+              API_KEY: ${{ '{{' }} secrets.API_KEY {{ '}}' }}
+            ```
+
+            **In n8n:**
+            - Use the Credentials manager in n8n UI
+            - Reference credentials by name, not by value
+            - Never export credentials in workflow JSON
+
+            ### Prevention
+
+            To prevent future incidents:
+            - [ ] Enable secret scanning in repository settings
+            - [ ] Add `.env` files to `.gitignore`
+            - [ ] Use environment variables for all credentials
+            - [ ] Regular security audits (automated weekly)
+            - [ ] Team training on credential management
+
+            ---
+
+            **Priority:** This issue must be resolved within 24 hours.
+          labels: type:security,priority:critical,status:needs-triage
+          assignees: ${{ github.actor }}
+
+      - name: Create warning issue for non-critical findings
+        if: steps.credential-check.outputs.warning > 0 && steps.credential-check.outputs.critical == 0
+        uses: dacbd/create-issue-action@main
+        with:
+          token: ${{ github.token }}
+          title: "⚠️ Security: Potential Credential Exposure - ${{ github.run_id }}"
+          body: |
+            ## ⚠️ Security Warning
+
+            **Severity:** WARNING
+            **Scan Date:** ${{ github.event.repository.updated_at }}
+            **Scan Run:** [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ### Summary
+            - **Warnings:** ${{ steps.credential-check.outputs.warning }}
+            - **Findings:** ${{ steps.credential-check.outputs.findings }}
+
+            Potential credential patterns were detected. These may be false positives, but should be reviewed.
+
+            ### Action Items
+            - [ ] Review [scan results](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [ ] Verify if findings are actual credentials or false positives
+            - [ ] Remove any confirmed credentials
+            - [ ] Update to use GitHub Secrets or n8n credential manager
+            - [ ] Re-run scan to verify
+
+            ### Best Practices
+            - Use GitHub Secrets for all API keys
+            - Use n8n credential manager for workflow credentials
+            - Never commit `.env` files
+            - Use environment variables for configuration
+          labels: type:security,priority:medium,status:needs-triage
+
+      - name: Post scan summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan completed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Next scheduled scan:** Sunday at 2 AM UTC" >> $GITHUB_STEP_SUMMARY

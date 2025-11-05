@@ -1,0 +1,304 @@
+name: 🚀 Deployment Checklist
+description: Track a workflow deployment to production
+title: "[DEPLOY] "
+labels: ["type:deployment", "status:ready"]
+assignees:
+  - hharp
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Deployment Checklist
+
+        Use this template to track the deployment of workflows to production. Complete all checklist items before marking as deployed.
+
+        **To deploy:** Add the label `deploy-to-prod` to this issue (IssueOps deployment will start automatically)
+
+  - type: dropdown
+    id: deployment-type
+    attributes:
+      label: Deployment Type
+      description: What kind of deployment is this?
+      options:
+        - New workflow (first deployment)
+        - Workflow update (existing workflow)
+        - Bug fix deployment
+        - Feature enhancement
+        - Emergency hotfix
+        - Rollback
+      default: 1
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: workflows-to-deploy
+    attributes:
+      label: Workflows to Deploy
+      description: Select which workflow(s) to deploy
+      options:
+        - label: ChuckyDiscordRAG.json
+        - label: ChuckyTelegramLocal.json
+        - label: Payment_Management_Workflow.json
+        - label: User_Auth_Workflow.json
+        - label: Quota_Enforcement_Workflow.json
+        - label: Premium_Features_Workflow.json
+        - label: Monitoring_Analytics_Workflow.json
+        - label: Marketing_Retention_Workflow.json
+        - label: Security_Compliance_Workflow.json
+        - label: Stripe_Webhook_Handler.json
+        - label: Monthly_Quota_Reset.json
+
+  - type: dropdown
+    id: target-environment
+    attributes:
+      label: Target Environment
+      description: Where are you deploying?
+      options:
+        - Production (live n8n instance)
+        - Staging (test instance)
+        - Both (staging first, then production)
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: related-pr
+    attributes:
+      label: Related Pull Request
+      description: Link to the PR that contains these changes
+      placeholder: "#123 or https://github.com/user/repo/pull/123"
+
+  - type: input
+    id: related-issue
+    attributes:
+      label: Related Issue/Feature Request
+      description: Link to the issue or feature request this deployment addresses
+      placeholder: "#456 or https://github.com/user/repo/issues/456"
+
+  - type: textarea
+    id: changes-summary
+    attributes:
+      label: Changes Summary
+      description: Briefly describe what's changing in this deployment
+      placeholder: |
+        - Added error handling for Gemini API timeouts
+        - Increased retry logic from 2 to 3 attempts
+        - Updated Discord response messages
+        - Fixed bug in Supabase vector search
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pre-deployment
+    attributes:
+      label: "Phase 1: Pre-Deployment"
+      description: Complete these before deployment
+      options:
+        - label: Code reviewed and approved
+          required: false
+        - label: All validation checks passed (CI workflow)
+          required: false
+        - label: Tested locally or in staging
+          required: false
+        - label: All credentials configured and verified
+          required: false
+        - label: Database migrations completed (if applicable)
+          required: false
+        - label: Dependencies verified (API availability, service status)
+          required: false
+        - label: Backup of current production workflow taken
+          required: false
+        - label: Rollback plan documented below
+          required: false
+        - label: Stakeholders notified of deployment
+          required: false
+        - label: Deployment window scheduled (if needed)
+          required: false
+
+  - type: checkboxes
+    id: deployment
+    attributes:
+      label: "Phase 2: Deployment"
+      description: Deployment steps
+      options:
+        - label: Workflow JSON imported to n8n
+          required: false
+        - label: Credentials mapped correctly
+          required: false
+        - label: Node connections verified
+          required: false
+        - label: Workflow activated in n8n
+          required: false
+        - label: Initial test execution successful
+          required: false
+        - label: No error logs during deployment
+          required: false
+
+  - type: checkboxes
+    id: post-deployment
+    attributes:
+      label: "Phase 3: Post-Deployment Verification"
+      description: Verify deployment success
+      options:
+        - label: Integration tests passed
+          required: false
+        - label: End-to-end user flow tested
+          required: false
+        - label: All webhooks/triggers responding
+          required: false
+        - label: Error monitoring enabled
+          required: false
+        - label: Performance metrics acceptable
+          required: false
+        - label: No spike in error rates
+          required: false
+        - label: Key functionality verified (list below)
+          required: false
+
+  - type: checkboxes
+    id: post-deployment-tasks
+    attributes:
+      label: "Phase 4: Post-Deployment Tasks"
+      description: Administrative tasks after deployment
+      options:
+        - label: Documentation updated
+          required: false
+        - label: Team notified of successful deployment
+          required: false
+        - label: Deployment notes added to changelog
+          required: false
+        - label: Monitor for 24 hours for issues
+          required: false
+        - label: Close related issues/PRs
+          required: false
+        - label: Update project board
+          required: false
+
+  - type: textarea
+    id: test-plan
+    attributes:
+      label: Testing Plan
+      description: How will you verify this deployment works?
+      placeholder: |
+        **Test Cases:**
+        1. Discord command `/analyze` with sample image
+           - Expected: Image analyzed and categorized correctly
+        2. Gemini API timeout scenario
+           - Expected: Retry logic kicks in, succeeds on 2nd attempt
+        3. Large image (>5MB)
+           - Expected: Processed within 60 seconds
+        4. Invalid image format
+           - Expected: Friendly error message returned
+
+        **Success Criteria:**
+        - All test cases pass
+        - Response time <30s for typical images
+        - Error rate <1%
+
+  - type: textarea
+    id: rollback-plan
+    attributes:
+      label: Rollback Plan
+      description: How to rollback if something goes wrong
+      placeholder: |
+        **If deployment fails:**
+        1. Deactivate the new workflow in n8n
+        2. Reactivate the previous version (workflow ID: XXX)
+        3. Or restore from backup: `Chucky_backup_2025-11-05.json`
+
+        **Git rollback:**
+        ```bash
+        git revert <commit-hash>
+        git push origin main
+        ```
+
+        **Database rollback (if applicable):**
+        - Revert any schema changes
+        - Restore from backup if data was modified
+
+  - type: textarea
+    id: key-functionality
+    attributes:
+      label: Key Functionality to Verify
+      description: List critical features to test post-deployment
+      placeholder: |
+        - [ ] Discord bot responds to commands
+        - [ ] Image analysis completes successfully
+        - [ ] Data stored in Supabase correctly
+        - [ ] Webhooks fire as expected
+        - [ ] User notifications sent
+        - [ ] Payment processing works (if applicable)
+
+  - type: textarea
+    id: monitoring
+    attributes:
+      label: Monitoring & Alerts
+      description: How will you monitor this deployment?
+      placeholder: |
+        **Monitoring:**
+        - n8n execution logs
+        - Supabase dashboard for database activity
+        - Discord channel for user reports
+        - Error tracking in workflow logs
+
+        **Alerts configured for:**
+        - Workflow execution failures (Discord webhook)
+        - API timeout errors (>3 per hour)
+        - Database connection issues
+        - High error rate (>5%)
+
+  - type: dropdown
+    id: risk-level
+    attributes:
+      label: Risk Level
+      description: How risky is this deployment?
+      options:
+        - Low - Minor changes, well tested
+        - Medium - Moderate changes, some risk
+        - High - Major changes, significant impact
+        - Critical - Production critical, high risk
+      default: 1
+
+  - type: textarea
+    id: deployment-notes
+    attributes:
+      label: Deployment Notes
+      description: Any additional notes or observations
+      placeholder: |
+        **Special considerations:**
+        - Deploy during low-traffic hours (2-4 AM UTC)
+        - Coordinate with team member X
+        - Monitor for 1 hour after deployment
+
+        **Known issues/limitations:**
+        - Temporary increased response time expected during first 10 mins
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        ## Deployment Instructions
+
+        ### Automated Deployment (IssueOps)
+
+        1. Complete all pre-deployment checklist items above
+        2. Add the label `deploy-to-prod` to this issue
+        3. GitHub Actions will automatically deploy the workflows listed above
+        4. Monitor the workflow run and this issue for status updates
+        5. Complete post-deployment verification steps
+
+        ### Manual Deployment
+
+        If automated deployment is not available:
+        1. Export workflow JSON from repository
+        2. Import into n8n instance
+        3. Configure credentials
+        4. Activate workflow
+        5. Test thoroughly
+
+        ---
+
+        **Deployment initiated by:** @{user}
+        **Target date:** {date}

@@ -1,0 +1,233 @@
+name: CI - Validate Workflows
+
+on:
+  pull_request:
+    paths:
+      - '**.json'
+  push:
+    branches: [main]
+    paths:
+      - '**.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  validate:
+    name: Validate n8n Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate JSON structure
+        id: validate
+        run: |
+          ERRORS=0
+          VALIDATED=0
+          WARNINGS=0
+
+          echo "# Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for file in *.json; do
+            # Only check workflow files
+            if [[ "$file" =~ ^(Chucky|workflow|ChuckyDiscord|ChuckyTelegram|Payment|User|Quota|Monitoring|Marketing|Premium|Security|Stripe|Monthly) ]]; then
+              echo "::group::Validating $file"
+
+              # Check JSON syntax
+              if ! jq empty "$file" 2>/dev/null; then
+                echo "::error file=$file::Invalid JSON syntax"
+                echo "- ❌ **$file** - Invalid JSON syntax" >> $GITHUB_STEP_SUMMARY
+                ERRORS=$((ERRORS + 1))
+                echo "::endgroup::"
+                continue
+              fi
+
+              # Check required fields
+              if ! jq -e '.nodes' "$file" > /dev/null 2>&1; then
+                echo "::error file=$file::Missing required field: nodes"
+                echo "- ❌ **$file** - Missing required field: nodes" >> $GITHUB_STEP_SUMMARY
+                ERRORS=$((ERRORS + 1))
+                echo "::endgroup::"
+                continue
+              fi
+
+              if ! jq -e '.connections' "$file" > /dev/null 2>&1; then
+                echo "::error file=$file::Missing required field: connections"
+                echo "- ❌ **$file** - Missing required field: connections" >> $GITHUB_STEP_SUMMARY
+                ERRORS=$((ERRORS + 1))
+                echo "::endgroup::"
+                continue
+              fi
+
+              # Extract metadata
+              NAME=$(jq -r '.name // "Unnamed"' "$file")
+              NODE_COUNT=$(jq '.nodes | length' "$file")
+              CONNECTION_COUNT=$(jq '.connections | to_entries | length' "$file")
+
+              # Check for disabled nodes
+              DISABLED_COUNT=$(jq '[.nodes[] | select(.disabled == true)] | length' "$file")
+              if [ $DISABLED_COUNT -gt 0 ]; then
+                echo "::warning file=$file::Contains $DISABLED_COUNT disabled nodes"
+                echo "- ⚠️ **$file** - Contains $DISABLED_COUNT disabled nodes" >> $GITHUB_STEP_SUMMARY
+                WARNINGS=$((WARNINGS + 1))
+              else
+                echo "- ✅ **$file** - Valid workflow: $NAME ($NODE_COUNT nodes, $CONNECTION_COUNT connections)" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              echo "✅ Valid workflow: $NAME"
+              echo "   Nodes: $NODE_COUNT, Connections: $CONNECTION_COUNT"
+              echo "::endgroup::"
+
+              VALIDATED=$((VALIDATED + 1))
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:** $VALIDATED workflows validated, $ERRORS errors, $WARNINGS warnings" >> $GITHUB_STEP_SUMMARY
+
+          echo "validated=$VALIDATED" >> $GITHUB_OUTPUT
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::Found $ERRORS validation errors"
+            exit 1
+          fi
+
+      - name: Check for credentials exposure
+        id: credentials
+        run: |
+          echo "## Credential Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Scanning for exposed credentials..." >> $GITHUB_STEP_SUMMARY
+
+          # Patterns to check
+          FOUND=0
+
+          # Check for API key patterns (but exclude credential references)
+          if grep -rE '"(sk-|api_key|apiKey|api-key|token|bearer)"\s*:\s*"[a-zA-Z0-9_\-\.]{30,}"' *.json 2>/dev/null | grep -v '"credentialId"'; then
+            echo "::warning::Potential API key found in workflow JSON"
+            echo "- ⚠️ Potential API key patterns detected" >> $GITHUB_STEP_SUMMARY
+            FOUND=1
+          fi
+
+          # Check for password fields with values
+          if grep -rE '"password"\s*:\s*"[^"]{5,}"' *.json 2>/dev/null | grep -v '""'; then
+            echo "::warning::Potential password found in workflow JSON"
+            echo "- ⚠️ Potential password fields with values detected" >> $GITHUB_STEP_SUMMARY
+            FOUND=1
+          fi
+
+          echo "found=$FOUND" >> $GITHUB_OUTPUT
+
+          if [ $FOUND -eq 0 ]; then
+            echo "- ✅ No obvious credentials detected" >> $GITHUB_STEP_SUMMARY
+            echo "✅ No credentials detected"
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**⚠️ Warning:** Potential credentials detected. Please review!" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const validated = '${{ steps.validate.outputs.validated }}';
+            const errors = '${{ steps.validate.outputs.errors }}';
+            const warnings = '${{ steps.validate.outputs.warnings }}';
+            const credsFound = '${{ steps.credentials.outputs.found }}';
+
+            const statusIcon = errors === '0' ? '✅' : '❌';
+            const statusText = errors === '0' ? 'PASSED' : 'FAILED';
+
+            const body = `## Workflow Validation Results ${statusIcon}
+
+            **Status:** ${statusText}
+
+            ### Summary
+            - **Workflows Validated:** ${validated}
+            - **Errors:** ${errors}
+            - **Warnings:** ${warnings}
+            - **Credential Scan:** ${credsFound === '0' ? '✅ Clean' : '⚠️ Review required'}
+
+            ${errors === '0' ? '**Safe to merge!** 🚀' : '❌ **Please fix validation errors before merging.**'}
+
+            <details>
+            <summary>View validation details</summary>
+
+            Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed results.
+            </details>
+            `;
+
+            // Find existing comment from this workflow
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Workflow Validation Results')
+            );
+
+            // Update existing or create new comment
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Create issue on validation failure
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: dacbd/create-issue-action@main
+        with:
+          token: ${{ github.token }}
+          title: "🚨 Workflow Validation Failed - ${{ github.sha }}"
+          body: |
+            ## Validation Failure Report
+
+            **Commit:** [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            **Workflow Run:** [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            **Triggered by:** @${{ github.actor }}
+
+            ### Summary
+            - Workflows Validated: ${{ steps.validate.outputs.validated }}
+            - Errors Found: ${{ steps.validate.outputs.errors }}
+            - Warnings: ${{ steps.validate.outputs.warnings }}
+
+            ### Action Items
+            - [ ] Review workflow run logs for specific errors
+            - [ ] Fix JSON syntax or structure issues
+            - [ ] Validate workflows locally with `jq` before pushing
+            - [ ] Re-run validation after fixes
+
+            ### Quick Fix Commands
+            ```bash
+            # Validate JSON locally
+            for file in *.json; do jq empty "$file" 2>/dev/null && echo "✅ $file" || echo "❌ $file"; done
+            ```
+          labels: type:bug,priority:high,component:n8n,status:needs-triage

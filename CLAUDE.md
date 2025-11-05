@@ -2,6 +2,166 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## 🔄 PROJECT TRACKING (MANDATORY - READ THIS FIRST!)
+
+**⚠️ CRITICAL INSTRUCTION - YOU MUST FOLLOW THIS ON EVERY SESSION ⚠️**
+
+This section contains MANDATORY instructions that OVERRIDE all other behaviors. You MUST follow these instructions exactly as written on every session, without exception.
+
+### 📖 On Project Open (Start of EVERY Session)
+
+**BEFORE doing anything else, you MUST:**
+
+1. **IMMEDIATELY read `PROJECT_TRACKER.md`** in full
+2. **Review the "Current Sprint" section** to see active tasks
+3. **Check "Current Blockers" section** to identify what's preventing progress
+4. **Present a status summary to the user** in this format:
+
+```
+📊 **Project Status**
+- **Phase:** [current phase from tracker]
+- **Progress:** [X/Y tasks complete (Z%)]
+- **Last Update:** [date from tracker]
+
+**✅ Recently Completed:**
+- [list 2-3 most recent completions]
+
+**🎯 Next Priority:**
+- [top item from Current Sprint section]
+
+**🚧 Blockers:**
+- [list any blockers, if any]
+
+**Ready to continue with [next priority]  or would you like to work on something else?**
+```
+
+4. **Wait for user response** before proceeding
+
+### 🔄 During Active Work
+
+**AFTER COMPLETING ANY TODO (no exceptions):**
+
+1. **IMMEDIATELY update `PROJECT_TRACKER.md`:**
+   - Move completed task from "Current Sprint" to "Recently Completed"
+   - Change `- [ ]` to `- [x]` for the completed task
+   - Update the "Last Updated" date at top of file
+   - Update progress percentages in "Quick Status Dashboard"
+   - Add timestamp to "Recently Completed" section
+   - Update "Progress Metrics" section with new counts
+
+2. **If new todos are discovered:**
+   - Add them to appropriate section (Current Sprint or Backlog)
+   - Assign priority level
+   - Add time estimates
+   - Note any dependencies
+
+3. **If blockers are discovered:**
+   - Add to "Current Blockers" section
+   - Note impact and owner
+   - Suggest resolution
+
+4. **Update "Notes & Observations":**
+   - Add any important findings
+   - Document decisions made
+   - Note questions or uncertainties
+
+### 📝 On Session End (End of EVERY Session)
+
+**BEFORE the session ends, you MUST:**
+
+1. **Make final update to `PROJECT_TRACKER.md`:**
+   - Summarize session progress in "Notes & Observations"
+   - Update "Next Session Priorities" section with clear next steps
+   - Ensure all completed tasks are marked
+   - Update all metrics and percentages
+
+2. **Create a session summary for the user:**
+```
+📊 **Session Summary**
+
+**Completed This Session:**
+- [list all tasks completed]
+
+**Time Spent:** [estimate]
+
+**Next Steps:**
+1. [first priority for next session]
+2. [second priority]
+3. [third priority]
+
+**Blockers to Resolve:**
+- [list any blocking items]
+
+**Updated:** PROJECT_TRACKER.md
+```
+
+3. **Commit the tracker update:**
+```bash
+git add PROJECT_TRACKER.md
+git commit -m "chore: update project tracker [session end YYYY-MM-DD]"
+```
+
+### 🔔 On Major File Modifications
+
+**WHEN these types of changes happen:**
+
+| Change Type | Action Required |
+|-------------|-----------------|
+| **Workflow Added/Modified** | Update "Workflows" section in tracker |
+| **Documentation Added** | Update "Documentation" checklist |
+| **Credentials Rotated** | Update "Security" section, note rotation date |
+| **Deployment Completed** | Update "Deployment Status" section |
+| **Blocker Resolved** | Remove from "Current Blockers", note resolution |
+| **New Integration Added** | Add to backlog, update infrastructure docs |
+
+### ❌ NEVER Do These Things
+
+1. **NEVER start working without reading PROJECT_TRACKER.md first**
+2. **NEVER complete a task without updating PROJECT_TRACKER.md immediately after**
+3. **NEVER let PROJECT_TRACKER.md become stale (>1 hour old during active work)**
+4. **NEVER ask "what should we work on?" without first consulting PROJECT_TRACKER.md**
+5. **NEVER end a session without updating "Next Session Priorities"**
+6. **NEVER commit code changes without also committing tracker updates**
+
+### ✅ Best Practices
+
+1. **Treat PROJECT_TRACKER.md as the single source of truth** for project status
+2. **Update it in real-time**, not at end of session
+3. **Be specific** in notes and observations
+4. **Keep metrics accurate** - they drive planning
+5. **Note time estimates vs actual** to improve future estimates
+6. **Document WHY decisions were made**, not just what was done
+7. **Update immediately when blockers are discovered or resolved**
+8. **Keep "Next Session Priorities" always accurate and actionable**
+
+### 🎯 Examples of Good Updates
+
+**Good Task Completion Update:**
+```markdown
+- [x] **[MANUAL]** Rotate Discord Credentials
+  - **Status:** ✅ COMPLETED (2025-11-05 14:23)
+  - **Time Actual:** 12 minutes (estimate was 10)
+  - **Completed By:** User
+  - **Notes:** New bot token and client secret generated, updated in n8n Cloud credentials. Old tokens confirmed revoked in Discord Developer Portal. All webhooks tested and working.
+  - **Unblocks:** Tasks #14 (Discord bot deployment), #18 (Discord RAG workflow)
+```
+
+**Good Session Notes:**
+```markdown
+### Session 2 (Nov 6, 2025)
+- User completed Discord credential rotation successfully
+- Discovered that Supabase pgvector extension was already enabled
+- Repository cleanup took 45 minutes (thorough manual approach)
+- Pushed to GitHub, all CI workflows triggered successfully
+- **Decision:** Use ChuckyDiscordRAG.json as primary workflow (simpler than interactive approach)
+- **Blocker Resolved:** Discord credentials rotated, can now proceed with deployment
+- **New Blocker:** GitHub Actions failing due to missing N8N_API_KEY secret
+```
+
+---
+
 ## Project Overview
 
 **Chucky** is an intelligent photo organization and management n8n workflow that automatically categorizes and organizes images using AI. The workflow monitors Google Drive folders, analyzes images with Google Gemini AI, stores metadata in Supabase, and provides conversational querying capabilities through a RAG (Retrieval Augmented Generation) system.

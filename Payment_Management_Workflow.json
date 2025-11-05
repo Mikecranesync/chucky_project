@@ -1,0 +1,354 @@
+{
+  "name": "Payment & Billing Management",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "id": "telegram-trigger-payment-001",
+      "name": "Telegram Trigger",
+      "webhookId": "payment-trigger-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract message and check for upgrade command\nconst message = $input.first().json.message;\nconst text = (message.text || '').toLowerCase().trim();\nconst telegramUser = message.from;\n\nreturn {\n  json: {\n    telegram_id: telegramUser.id.toString(),\n    chat_id: message.chat.id,\n    username: telegramUser.username || `user_${telegramUser.id}`,\n    message_text: text,\n    is_upgrade_command: text.startsWith('/upgrade') || text.includes('upgrade'),\n    is_pricing_command: text.startsWith('/pricing') || text.includes('pricing'),\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "id": "parse-command-002",
+      "name": "Parse Command"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "upgrade-check",
+              "leftValue": "={{ $json.is_upgrade_command }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "pricing-check",
+              "leftValue": "={{ $json.is_pricing_command }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400],
+      "id": "check-payment-command-003",
+      "name": "Is Payment Command?"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "id": "get-user-subscription-004",
+      "name": "Get User Subscription"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "=💳 **Chucky Premium Plans**\n\n🆓 **Free Plan** (Current)\n• Image categorization only\n• Limited features\n• No PDF delivery\n\n⭐ **Basic Plan - $4.99/month**\n• Unlimited image analyses\n• Full PDF delivery\n• 50 queries per month\n• Email support\n\n🚀 **Pro Plan - $19.99/month**\n• Everything in Basic\n• Unlimited queries\n• Custom reports & integrations\n• Priority support\n• Advanced analytics\n\n💰 **Pay-Per-Use Option**\n• $0.10 per PDF analysis\n• No subscription needed\n• Perfect for occasional use\n\nTo upgrade, click the button below or reply with:\n• /upgrade_basic\n• /upgrade_pro\n• /pay_once",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐ Basic $4.99/mo\",\"callback_data\":\"upgrade_basic\"},{\"text\":\"🚀 Pro $19.99/mo\",\"callback_data\":\"upgrade_pro\"}],[{\"text\":\"💰 Pay Once $0.10\",\"callback_data\":\"pay_once\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 300],
+      "id": "show-pricing-005",
+      "name": "Show Pricing Plans"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create Stripe checkout session data\nconst user = $('Get User Subscription').item.json[0];\nconst command = $('Parse Command').item.json.message_text;\n\n// Determine which plan based on command\nlet plan = 'basic';\nlet price = 4.99;\nlet priceId = 'price_basic_monthly'; // Replace with actual Stripe Price ID\nlet description = 'Basic Plan - Monthly Subscription';\n\nif (command.includes('pro')) {\n  plan = 'pro';\n  price = 19.99;\n  priceId = 'price_pro_monthly'; // Replace with actual Stripe Price ID\n  description = 'Pro Plan - Monthly Subscription';\n} else if (command.includes('pay_once') || command.includes('payonce')) {\n  plan = 'pay_per_use';\n  price = 0.10;\n  priceId = 'price_pay_per_use'; // Replace with actual Stripe Price ID\n  description = 'Single PDF Analysis';\n}\n\nreturn {\n  json: {\n    // User info\n    telegram_id: user.telegram_id,\n    customer_email: user.email || `${user.telegram_id}@telegram.user`,\n    customer_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username,\n    \n    // Plan info\n    plan_type: plan,\n    price_amount: price,\n    price_id: priceId,\n    description: description,\n    \n    // Stripe checkout params\n    mode: plan === 'pay_per_use' ? 'payment' : 'subscription',\n    success_url: `https://your-domain.com/payment-success?session_id={CHECKOUT_SESSION_ID}`,\n    cancel_url: `https://your-domain.com/payment-cancelled`,\n    \n    // Metadata for webhook\n    metadata: {\n      telegram_id: user.telegram_id,\n      plan: plan,\n      chat_id: $('Parse Command').item.json.chat_id\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "id": "prepare-stripe-session-006",
+      "name": "Prepare Stripe Session"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.stripe.com/v1/checkout/sessions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "mode",
+              "value": "={{ $json.mode }}"
+            },
+            {
+              "name": "customer_email",
+              "value": "={{ $json.customer_email }}"
+            },
+            {
+              "name": "line_items[0][price]",
+              "value": "={{ $json.price_id }}"
+            },
+            {
+              "name": "line_items[0][quantity]",
+              "value": "1"
+            },
+            {
+              "name": "success_url",
+              "value": "={{ $json.success_url }}"
+            },
+            {
+              "name": "cancel_url",
+              "value": "={{ $json.cancel_url }}"
+            },
+            {
+              "name": "metadata[telegram_id]",
+              "value": "={{ $json.metadata.telegram_id }}"
+            },
+            {
+              "name": "metadata[plan]",
+              "value": "={{ $json.metadata.plan }}"
+            },
+            {
+              "name": "metadata[chat_id]",
+              "value": "={{ $json.metadata.chat_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 300],
+      "id": "create-stripe-checkout-007",
+      "name": "Create Stripe Checkout"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "=✅ **Payment Link Created!**\n\n**Plan:** {{ $('Prepare Stripe Session').item.json.description }}\n**Amount:** ${{ $('Prepare Stripe Session').item.json.price_amount }}\n\n👇 Click here to complete payment:\n{{ $json.url }}\n\n🔒 Secure checkout powered by Stripe\n⏱️ Link expires in 24 hours\n\nAfter payment, your account will be upgraded automatically!",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"💳 Complete Payment\",\"url\":\"{{ $json.url }}\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 300],
+      "id": "send-payment-link-008",
+      "name": "Send Payment Link"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "payment_sessions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $('Create Stripe Checkout').item.json.id }}"
+            },
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $('Prepare Stripe Session').item.json.telegram_id }}"
+            },
+            {
+              "fieldId": "plan_type",
+              "fieldValue": "={{ $('Prepare Stripe Session').item.json.plan_type }}"
+            },
+            {
+              "fieldId": "amount",
+              "fieldValue": "={{ $('Prepare Stripe Session').item.json.price_amount }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "checkout_url",
+              "fieldValue": "={{ $('Create Stripe Checkout').item.json.url }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $('Parse Command').item.json.timestamp }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1780, 480],
+      "id": "log-payment-session-009",
+      "name": "Log Payment Session"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "ℹ️ Unknown command. Try:\n\n/upgrade - See premium plans\n/pricing - View pricing options\n/status - Check your subscription\n/help - Get help",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [900, 520],
+      "id": "unknown-command-010",
+      "name": "Unknown Command"
+    },
+    {
+      "parameters": {
+        "content": "## Payment & Billing Management\n\n**Purpose**: Handle upgrade requests and create Stripe checkout sessions\n\n**Commands Supported**:\n- /upgrade - Show pricing plans\n- /pricing - Show pricing plans\n- /upgrade_basic - Direct to Basic plan\n- /upgrade_pro - Direct to Pro plan\n- /pay_once - Single payment option\n\n**Flow**:\n1. User sends payment command\n2. Fetch user subscription status\n3. Show pricing plans with inline buttons\n4. Create Stripe checkout session\n5. Send payment link to user\n6. Log session in database\n\n**Stripe Setup Required**:\n1. Create Stripe account\n2. Set up Products & Prices:\n   - Basic Monthly: $4.99\n   - Pro Monthly: $19.99\n   - Pay-per-use: $0.10\n3. Add Stripe API key to n8n credentials\n4. Update Price IDs in \"Prepare Stripe Session\" node\n5. Set up webhook endpoint for payment events\n\n**Database Tables Needed**:\n- users (existing from Workflow #1)\n- payment_sessions (new - see schema file)\n- invoices (new - see schema file)",
+        "height": 460,
+        "width": 400,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 680],
+      "id": "documentation-note-011",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Is Payment Command?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Payment Command?": {
+      "main": [
+        [
+          {
+            "node": "Get User Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Subscription": {
+      "main": [
+        [
+          {
+            "node": "Show Pricing Plans",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Stripe Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stripe Session": {
+      "main": [
+        [
+          {
+            "node": "Create Stripe Checkout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Stripe Checkout": {
+      "main": [
+        [
+          {
+            "node": "Send Payment Link",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Payment Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

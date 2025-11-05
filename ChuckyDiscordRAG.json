@@ -1,0 +1,889 @@
+{
+  "name": "Chucky Discord RAG Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "channel": "",
+        "updates": [
+          "messageCreated"
+        ],
+        "options": {
+          "filter": "!",
+          "matchStartsWith": true
+        }
+      },
+      "id": "discord-trigger-001",
+      "name": "Discord Trigger",
+      "type": "n8n-nodes-base.discordTrigger",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        400
+      ],
+      "webhookId": "WEBHOOK_ID_PLACEHOLDER",
+      "credentials": {
+        "discordOAuth2Api": {
+          "id": "DISCORD_CREDENTIAL_ID",
+          "name": "Discord OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-query",
+              "name": "query",
+              "value": "={{ $json.content }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-session",
+              "name": "sessionId",
+              "value": "={{ $json.author.id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-channel",
+              "name": "channelId",
+              "value": "={{ $json.channel_id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-attachments",
+              "name": "attachments",
+              "value": "={{ $json.attachments || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "assign-username",
+              "name": "username",
+              "value": "={{ $json.author.username }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "edit-fields-001",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "leftValue": ""
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "condition-has-attachments",
+                    "leftValue": "={{ $json.attachments }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "array",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "leftValue": ""
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "condition-text-only",
+                    "leftValue": "={{ $json.query }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-input-type-001",
+      "name": "Route by Input Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        280,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "={{ $json.attachments[0].url }}"
+        },
+        "options": {}
+      },
+      "id": "download-attachment-001",
+      "name": "Download Attachment",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        520,
+        280
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_CREDENTIAL_ID",
+          "name": "Google Drive OAuth2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-pro-latest",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an industrial equipment analysis expert. Analyze images and PDFs to identify equipment type, potential faults, extract visible text/diagrams, and suggest initial troubleshooting steps based on industry standards (e.g., OSHA, NFPA). Output structured JSON with: category, description, keywords, extractedText, faults (array), suggestedSteps (array), confidence (0-100)."
+            },
+            {
+              "role": "user",
+              "content": "={{ 'Analyze this industrial equipment image/document: ' + $json.query }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxOutputTokens": 800
+        }
+      },
+      "id": "gemini-vision-001",
+      "name": "Gemini Vision Analysis",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        760,
+        280
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GOOGLE_PALM_API_ID",
+          "name": "Google PaLM API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini JSON response and extract structured data\nconst response = $input.first().json.response || $input.first().json.message?.content || '';\n\nlet parsed = {};\ntry {\n  // Try to extract JSON from markdown code blocks\n  const jsonMatch = response.match(/```json\\s*([\\s\\S]*?)\\s*```/) || \n                    response.match(/\\{[\\s\\S]*\\}/);\n  \n  if (jsonMatch) {\n    const jsonStr = jsonMatch[1] || jsonMatch[0];\n    parsed = JSON.parse(jsonStr);\n  } else {\n    // Fallback: manual parsing\n    parsed = {\n      category: response.match(/category[\"']?:\\s*[\"']([^\"']+)/i)?.[1] || 'Unknown',\n      description: response.match(/description[\"']?:\\s*[\"']([^\"']+)/i)?.[1] || response.substring(0, 200),\n      keywords: [],\n      extractedText: response.match(/extractedText[\"']?:\\s*[\"']([^\"']+)/i)?.[1] || '',\n      faults: [],\n      suggestedSteps: [],\n      confidence: parseInt(response.match(/confidence[\"']?:\\s*(\\d+)/i)?.[1] || '50')\n    };\n  }\n} catch (error) {\n  // If parsing fails, create minimal structure\n  parsed = {\n    category: 'Unknown',\n    description: response.substring(0, 200),\n    keywords: [],\n    extractedText: '',\n    faults: ['Unable to parse AI response'],\n    suggestedSteps: [],\n    confidence: 40\n  };\n}\n\n// Ensure confidence is a number\nparsed.confidence = parseInt(parsed.confidence) || 50;\n\n// Add original query and session info\nparsed.originalQuery = $input.first().json.query || '';\nparsed.sessionId = $input.first().json.sessionId || '';\nparsed.channelId = $input.first().json.channelId || '';\nparsed.username = $input.first().json.username || '';\nparsed.hasAttachment = true;\nparsed.rawResponse = response;\n\nreturn { json: parsed };"
+      },
+      "id": "code-parse-json-001",
+      "name": "Parse Vision Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "condition-confidence",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-confidence-001",
+      "name": "Check Confidence",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $json.channelId }}",
+        "text": "={{ '**Clarification Needed** (<@' + $json.sessionId + '>)\\n\\nI analyzed the image but only have ' + $json.confidence + '% confidence. Can you provide more details?\\n\\n**What I detected:**\\n- Category: ' + $json.category + '\\n- Description: ' + $json.description + '\\n\\nPlease specify:\\n1. Exact equipment model/type\\n2. What specific issue you\\'re experiencing\\n3. Any error codes or symptoms' }}",
+        "options": {}
+      },
+      "id": "discord-send-clarify-001",
+      "name": "Ask for Clarification",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        420
+      ],
+      "credentials": {
+        "discordOAuth2Api": {
+          "id": "DISCORD_CREDENTIAL_ID",
+          "name": "Discord OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve",
+        "tableName": "learnable_content",
+        "query": "={{ $json.description || $json.query }}",
+        "topK": 5,
+        "options": {
+          "similarityThreshold": 0.7
+        }
+      },
+      "id": "vector-store-retrieve-001",
+      "name": "RAG Retrieval",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1480,
+        140
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "embedding-001"
+      },
+      "id": "gemini-embeddings-001",
+      "name": "Gemini Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        20
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GOOGLE_PALM_API_ID",
+          "name": "Google PaLM API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-analysis-rag-001",
+      "name": "Merge Analysis + RAG",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'You are an industrial troubleshooting expert. Use the provided tools to: 1) Analyze the input (image analysis or text query), 2) Retrieve relevant documentation from the knowledge base, 3) Generate detailed troubleshooting steps, 4) Verify and iterate if needed.\\n\\nUser Query: ' + $json.query + '\\n\\n' + ($json.description ? 'Image Analysis:\\n- Category: ' + $json.category + '\\n- Faults: ' + JSON.stringify($json.faults) + '\\n- Extracted Text: ' + $json.extractedText + '\\n\\n' : '') + 'Retrieved Documentation:\\n' + ($json.documents ? $json.documents.map((d, i) => (i+1) + '. ' + d.pageContent).join('\\n\\n') : 'No relevant docs found') + '\\n\\nProvide step-by-step troubleshooting in numbered markdown format. Include safety warnings where applicable.' }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are Chucky, an expert industrial maintenance assistant. Provide clear, actionable troubleshooting steps based on equipment analysis, retrieved manuals, and industry best practices. Always prioritize safety. Format responses as numbered markdown lists with detailed explanations."
+        }
+      },
+      "id": "ai-agent-001",
+      "name": "Chucky AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "postgres-memory-001",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "grok-beta",
+        "options": {
+          "temperature": 0.5,
+          "maxTokens": 2000
+        }
+      },
+      "id": "xai-grok-001",
+      "name": "xAI Grok Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatxAi",
+      "typeVersion": 1,
+      "position": [
+        1960,
+        -60
+      ],
+      "credentials": {
+        "xAiApi": {
+          "id": "XAI_CREDENTIAL_ID",
+          "name": "xAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "vectorStoreRetrieval",
+        "description": "Retrieve relevant documentation from the industrial equipment knowledge base. Use this to find manuals, troubleshooting guides, safety procedures, and technical specifications.",
+        "mode": "retrieve",
+        "tableName": "learnable_content",
+        "topK": 5,
+        "options": {
+          "similarityThreshold": 0.7
+        }
+      },
+      "id": "tool-vector-store-001",
+      "name": "Vector Store Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        60
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "customAnalysis",
+        "description": "Execute custom JavaScript code for specialized analysis, data transformation, or calculations. Use this for extracting specific information from analysis results.",
+        "code": "// Custom analysis logic\nconst input = $input.all();\nconst result = {\n  processed: true,\n  data: input\n};\nreturn result;",
+        "options": {}
+      },
+      "id": "tool-code-001",
+      "name": "Code Analysis Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "name": "externalSearch",
+        "description": "Search external sources (web, documentation sites) when internal knowledge base doesn't have sufficient information. Use for finding manufacturer manuals, OSHA guidelines, or recent technical bulletins.",
+        "method": "GET",
+        "url": "=https://api.brave.com/res/v1/web/search?q={{ encodeURIComponent($json.query) }}&count=5",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "tool-http-001",
+      "name": "External Search Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1720,
+        -180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BRAVE_API_CREDENTIAL_ID",
+          "name": "Brave Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batches-001",
+      "name": "Iteration Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format AI Agent response as Discord markdown\nconst agentOutput = $input.first().json.output || $input.first().json.text || '';\nconst sessionId = $input.first().json.sessionId || '';\nconst username = $input.first().json.username || 'User';\nconst channelId = $input.first().json.channelId || '';\n\n// Format with user mention\nlet formattedResponse = `**Chucky's Analysis** for <@${sessionId}>\\n\\n`;\n\n// Add response content\nformattedResponse += agentOutput;\n\n// Add footer\nformattedResponse += '\\n\\n---\\n*Troubleshooting powered by Chucky AI | Industrial Maintenance Assistant*';\n\n// Truncate if too long (Discord limit 2000 chars)\nif (formattedResponse.length > 1900) {\n  formattedResponse = formattedResponse.substring(0, 1900) + '...\\n\\n*Response truncated. See full analysis in attached document.*';\n}\n\nreturn {\n  json: {\n    channelId: channelId,\n    formattedMessage: formattedResponse,\n    rawOutput: agentOutput,\n    sessionId: sessionId\n  }\n};"
+      },
+      "id": "code-format-response-001",
+      "name": "Format Discord Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $json.channelId }}",
+        "text": "={{ $json.formattedMessage }}",
+        "options": {
+          "allowedMentions": {
+            "users": [
+              "={{ $json.sessionId }}"
+            ]
+          }
+        }
+      },
+      "id": "discord-send-response-001",
+      "name": "Send Troubleshooting Steps",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        200
+      ],
+      "credentials": {
+        "discordOAuth2Api": {
+          "id": "DISCORD_CREDENTIAL_ID",
+          "name": "Discord OAuth2"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-text-query",
+              "name": "query",
+              "value": "={{ $json.query }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-no-attachment",
+              "name": "hasAttachment",
+              "value": "=false",
+              "type": "boolean"
+            },
+            {
+              "id": "assign-description",
+              "name": "description",
+              "value": "={{ $json.query }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-text-query-001",
+      "name": "Set Text Query",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        520
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger-001",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $('Discord Trigger').item.json.channel_id || 'FALLBACK_CHANNEL_ID' }}",
+        "text": "={{ '**Error Occurred** ⚠️\\n\\nSorry, I encountered an issue processing your request.\\n\\n**Error:** ' + $json.error?.message + '\\n\\nPlease try again or contact support if the issue persists.' }}",
+        "options": {}
+      },
+      "id": "discord-send-error-001",
+      "name": "Send Error Message",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        480
+      ],
+      "credentials": {
+        "discordOAuth2Api": {
+          "id": "DISCORD_CREDENTIAL_ID",
+          "name": "Discord OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://your-logging-service.com/errors",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "error",
+              "value": "={{ JSON.stringify($json.error) }}"
+            },
+            {
+              "name": "workflow",
+              "value": "Chucky Discord RAG"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-log-error-001",
+      "name": "Log Error to External Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2680,
+        620
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Discord Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Route by Input Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Input Type": {
+      "main": [
+        [
+          {
+            "node": "Download Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Text Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Attachment": {
+      "main": [
+        [
+          {
+            "node": "Gemini Vision Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Vision Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Vision Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Vision Response": {
+      "main": [
+        [
+          {
+            "node": "Check Confidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Confidence": {
+      "main": [
+        [
+          {
+            "node": "RAG Retrieval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Retrieval": {
+      "main": [
+        [
+          {
+            "node": "Merge Analysis + RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Text Query": {
+      "main": [
+        [
+          {
+            "node": "RAG Retrieval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Analysis + RAG": {
+      "main": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chucky AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Iteration Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iteration Loop": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Response": {
+      "main": [
+        [
+          {
+            "node": "Send Troubleshooting Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Error to External Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "RAG Retrieval",
+            "type": "ai_embedding",
+            "index": 0
+          },
+          {
+            "node": "Vector Store Tool",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "xAI Grok Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Store Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Analysis Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "External Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Chucky AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "ERROR_WORKFLOW_ID"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-11-03T00:00:00.000Z",
+      "updatedAt": "2025-11-03T00:00:00.000Z",
+      "id": "1",
+      "name": "Industrial Maintenance"
+    },
+    {
+      "createdAt": "2025-11-03T00:00:00.000Z",
+      "updatedAt": "2025-11-03T00:00:00.000Z",
+      "id": "2",
+      "name": "RAG Agent"
+    },
+    {
+      "createdAt": "2025-11-03T00:00:00.000Z",
+      "updatedAt": "2025-11-03T00:00:00.000Z",
+      "id": "3",
+      "name": "Discord Bot"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

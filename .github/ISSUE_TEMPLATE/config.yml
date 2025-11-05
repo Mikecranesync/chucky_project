@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/hharp/chucky_project/blob/main/CLAUDE.md
+    about: View the Chucky project documentation and workflow guides
+  - name: 🚀 Deployment Guide
+    url: https://github.com/hharp/chucky_project/blob/main/GITHUB_SETUP.md
+    about: Learn how to deploy workflows using GitHub Actions
+  - name: 💬 Ask a Question
+    url: https://github.com/hharp/chucky_project/discussions
+    about: Ask questions and discuss the project with the community

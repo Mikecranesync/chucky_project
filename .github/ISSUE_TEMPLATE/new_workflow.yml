@@ -1,0 +1,194 @@
+name: 🔧 New Workflow Request
+description: Request a new n8n workflow creation for the Chucky project
+title: "[WORKFLOW] "
+labels: ["type:feature", "status:needs-triage"]
+assignees:
+  - hharp
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## New n8n Workflow Request
+
+        Use this template to request a new workflow for the Chucky photo organization system or related functionality.
+
+  - type: input
+    id: workflow-name
+    attributes:
+      label: Workflow Name
+      description: What should this workflow be called?
+      placeholder: "e.g., HVAC Monitoring Workflow, Customer Onboarding Flow"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: integration
+    attributes:
+      label: Primary Integration/Platform
+      description: What is the main service this workflow will interact with?
+      options:
+        - Discord
+        - Telegram
+        - Supabase (Database/Vector Store)
+        - Google Drive
+        - Google Gemini (AI)
+        - Stripe (Payment)
+        - Email (SMTP/IMAP)
+        - Webhook/HTTP API
+        - Airtable
+        - Scheduled/Cron
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: trigger-type
+    attributes:
+      label: Trigger Type
+      description: How should this workflow start?
+      options:
+        - Webhook (external system calls n8n)
+        - Manual (user clicks button in n8n)
+        - Schedule/Cron (time-based)
+        - On file change (Google Drive, etc.)
+        - On database event (Supabase trigger)
+        - On message (Discord/Telegram)
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Workflow Description
+      description: Describe what this workflow should do. Be specific about inputs, processing, and outputs.
+      placeholder: |
+        Example:
+        1. Trigger when new image uploaded to "Industrial Photos" folder in Google Drive
+        2. Download the image
+        3. Analyze with Gemini AI for equipment type and condition
+        4. Store metadata in Supabase "equipment_photos" table
+        5. If condition is "needs maintenance", send alert to Discord #maintenance channel
+        6. Move file to categorized folder based on equipment type
+    validations:
+      required: true
+
+  - type: textarea
+    id: nodes-needed
+    attributes:
+      label: Required Nodes/Steps
+      description: List the n8n nodes you think will be needed (if known)
+      placeholder: |
+        - Google Drive Trigger (folder watch)
+        - Google Drive (download file)
+        - Google Gemini Vision (image analysis)
+        - Code node (parse AI response)
+        - Supabase (insert data)
+        - IF node (condition check)
+        - Discord node (send message)
+        - Google Drive (move file)
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How urgent is this workflow?
+      options:
+        - Low - Nice to have, no rush
+        - Medium - Needed soon for upcoming feature
+        - High - Important for current operations
+        - Critical - Blocking other work
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: data-schema
+    attributes:
+      label: Data Schema (if applicable)
+      description: If this workflow stores or retrieves data, describe the schema
+      placeholder: |
+        Table: equipment_photos
+        Columns:
+        - id: uuid (primary key)
+        - file_name: text
+        - equipment_type: text
+        - condition: text (good|fair|needs_maintenance|critical)
+        - analysis_date: timestamp
+        - gemini_description: text
+        - drive_url: text
+
+  - type: textarea
+    id: credentials
+    attributes:
+      label: Credentials/API Keys Needed
+      description: List any new credentials that need to be set up (don't include actual keys!)
+      placeholder: |
+        - Google Drive OAuth2 (account 7 - already set up)
+        - New service: XYZ API key (needs to be added to n8n)
+        - Supabase API key (already configured)
+
+  - type: dropdown
+    id: related-workflow
+    attributes:
+      label: Related to Existing Workflow?
+      description: Is this an extension of an existing workflow?
+      options:
+        - "No - Completely new"
+        - "ChuckyDiscordRAG.json"
+        - "ChuckyTelegramLocal.json"
+        - "Payment_Management_Workflow.json"
+        - "User_Auth_Workflow.json"
+        - "Quota_Enforcement_Workflow.json"
+        - "Premium_Features_Workflow.json"
+        - "Monitoring_Analytics_Workflow.json"
+        - "Security_Compliance_Workflow.json"
+        - "Other (specify in description)"
+
+  - type: textarea
+    id: example-data
+    attributes:
+      label: Example Input/Output
+      description: Provide example data if applicable
+      placeholder: |
+        **Example Input:**
+        - Image: compressor_unit_42.jpg
+        - Location: Google Drive/Unprophoto/Industrial
+
+        **Expected Output:**
+        - Supabase record created
+        - Discord notification sent if maintenance needed
+        - File moved to: Google Drive/Industrial/HVAC/Compressors
+
+  - type: checkboxes
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: These tasks will be completed before this workflow is considered finished
+      options:
+        - label: Workflow JSON created and validated
+          required: false
+        - label: All credentials configured in n8n
+          required: false
+        - label: Tested with sample data
+          required: false
+        - label: Error handling implemented
+          required: false
+        - label: Documentation added (comments in workflow, README update)
+          required: false
+        - label: Deployed to production n8n instance
+          required: false
+        - label: Verified working in production
+          required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information, diagrams, links, or context
+      placeholder: |
+        - Link to related documentation
+        - Screenshots or mockups
+        - Similar workflows for reference
+        - Constraints or requirements

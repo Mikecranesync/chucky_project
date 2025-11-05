@@ -22,6 +22,60 @@ docker-compose.override.yml
 /build
 /dist
 
-# Other
+# Temporary workflow files
+workflow_temp.json
+workflow_debug.json
+workflow_modified.json
+workflow_updated.json
+workflow_backup.json
+workflow_*_payload.json
+workflow_verification.json
+update_*.json
+*_temp.json
+*_debug.json
+
+# Backup files
+*.BACKUP_*.json
+*.backup
+*~
+
+# Development scripts (move to archive/ instead)
+/*.ps1
+/*.js
+!*.config.js
+
+# Archive folder (for old/backup files)
+# Uncomment if you want to exclude archive from Git:
+# /archive/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 *.pem
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Diagnostic reports
+*_diagnostic_report.md
+*_error_fix_report.md
+*_validation_report.md
+
+# Credentials & Secrets (critical!)
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+service-account.json
+
+# Claude Code local settings
+.claude/settings.local.json

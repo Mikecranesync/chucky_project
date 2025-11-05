@@ -1,0 +1,371 @@
+{
+  "name": "Marketing & Retention System",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "id": "telegram-trigger-001",
+      "name": "Telegram Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse marketing/retention commands\nconst message = $input.first().json.message;\nconst text = (message.text || '').toLowerCase().trim();\nconst telegramUser = message.from;\n\nreturn {\n  json: {\n    telegram_id: telegramUser.id.toString(),\n    chat_id: message.chat.id,\n    username: telegramUser.username || `user_${telegramUser.id}`,\n    message_text: text,\n    \n    // Marketing commands\n    is_start_command: text.startsWith('/start'),\n    is_referral_code: text.includes('ref=') || text.startsWith('/refer'),\n    is_feedback_request: text.startsWith('/feedback') || text.includes('feedback'),\n    is_help_command: text.startsWith('/help'),\n    \n    // Extract referral code if present\n    referral_code: text.match(/ref=([a-zA-Z0-9]+)/) ? text.match(/ref=([a-zA-Z0-9]+)/)[1] : null,\n    \n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "id": "parse-marketing-command-002",
+      "name": "Parse Command"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "users",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "telegram_id",
+              "condition": "is",
+              "keyValue": "={{ $json.telegram_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 400],
+      "id": "check-existing-user-003",
+      "name": "Check Existing User"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "new-user",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-start",
+              "leftValue": "={{ $('Parse Command').item.json.is_start_command }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "id": "is-new-user-004",
+      "name": "New User?"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "=🎉 **Welcome to Chucky!**\\n\\nHi {{ $('Parse Command').item.json.username }}! I'm your AI assistant for photo organization and industrial maintenance.\\n\\n**🎁 Welcome Bonus:**\\nYou get **7 FREE requests** to try all features!\\n\\n**What I can do:**\\n\\n📸 **Photo Analysis**\\n• AI categorization\\n• Smart tagging\\n• Automatic organization\\n\\n📄 **PDF Generation** (Premium)\\n• Maintenance reports\\n• Custom summaries\\n• Professional formatting\\n\\n🤖 **AI Assistant**\\n• Answer questions about your photos\\n• Search your collection\\n• Get insights\\n\\n**Get Started:**\\n1️⃣ Send me a photo to analyze\\n2️⃣ Ask questions about your images\\n3️⃣ Type /help for all commands\\n\\n**💡 Refer Friends:**\\nShare your link and get 5 bonus requests per friend!\\n/refer to get your link\\n\\nLet's get started! Send me your first photo 📸",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"📸 Analyze a Photo\",\"callback_data\":\"analyze\"},{\"text\":\"❓ Help\",\"callback_data\":\"help\"}],[{\"text\":\"🎁 Refer Friends\",\"callback_data\":\"refer\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 300],
+      "id": "send-welcome-message-005",
+      "name": "Send Welcome Message"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "users",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "telegram_id",
+              "fieldValue": "={{ $('Parse Command').item.json.telegram_id }}"
+            },
+            {
+              "fieldId": "username",
+              "fieldValue": "={{ $('Parse Command').item.json.username }}"
+            },
+            {
+              "fieldId": "subscription_status",
+              "fieldValue": "free"
+            },
+            {
+              "fieldId": "usage_count",
+              "fieldValue": 0
+            },
+            {
+              "fieldId": "bonus_requests",
+              "fieldValue": 7
+            },
+            {
+              "fieldId": "referred_by",
+              "fieldValue": "={{ $('Parse Command').item.json.referral_code }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $('Parse Command').item.json.timestamp }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 460],
+      "id": "create-new-user-006",
+      "name": "Create New User"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "has-referrer",
+              "leftValue": "={{ $('Parse Command').item.json.referral_code }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 460],
+      "id": "has-referral-007",
+      "name": "Has Referral?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Credit referrer with bonus requests\nUPDATE users \nSET bonus_requests = bonus_requests + 5\nWHERE telegram_id = '{{ $('Parse Command').item.json.referral_code }}'\nRETURNING telegram_id, bonus_requests, username;",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 540],
+      "id": "credit-referrer-008",
+      "name": "Credit Referrer"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json[0].telegram_id }}",
+        "text": "=🎉 **Referral Bonus!**\\n\\nCongratulations! Someone used your referral link.\\n\\n**+5 Bonus Requests** added to your account!\\n\\nYour new balance: {{ $json[0].bonus_requests }} bonus requests\\n\\nKeep sharing to earn more! 🚀",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1780, 540],
+      "id": "notify-referrer-009",
+      "name": "Notify Referrer"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get user's referral stats\nSELECT\n  telegram_id,\n  username,\n  bonus_requests,\n  (SELECT COUNT(*) FROM users WHERE referred_by = '{{ $('Parse Command').item.json.telegram_id }}') as total_referrals\nFROM users\nWHERE telegram_id = '{{ $('Parse Command').item.json.telegram_id }}';",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 620],
+      "id": "get-referral-stats-010",
+      "name": "Get Referral Stats"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "=🎁 **Referral Program**\\n\\nEarn bonus requests by inviting friends!\\n\\n**Your Stats:**\\n• Total Referrals: {{ $json[0].total_referrals }}\\n• Bonus Requests: {{ $json[0].bonus_requests }}\\n\\n**Your Referral Link:**\\n`https://t.me/YourChuckyBot?start=ref={{ $json[0].telegram_id }}`\\n\\n**How it works:**\\n1️⃣ Share your link with friends\\n2️⃣ They sign up using your link\\n3️⃣ You both get +5 bonus requests!\\n\\n**Benefits:**\\n• Bonus requests never expire\\n• Use them anytime your quota is full\\n• Stack with your regular monthly quota\\n\\n**Tips for sharing:**\\n• Share on social media\\n• Send to work colleagues\\n• Post in relevant communities\\n\\nStart sharing and unlock unlimited requests! 🚀",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 620],
+      "id": "send-referral-info-011",
+      "name": "Send Referral Info"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "=📝 **We'd love your feedback!**\\n\\nHow was your experience with Chucky?\\n\\nPlease rate us and share your thoughts.\\n\\n**Quick Survey:**\\n\\n1️⃣ **Overall Experience** (1-5 stars)\\n2️⃣ **What do you like most?**\\n3️⃣ **What could we improve?**\\n4️⃣ **Would you recommend to a friend?**\\n\\nYour feedback helps us improve! 💙\\n\\nReply with your rating (1-5) to get started.",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "{\"inline_keyboard\":[[{\"text\":\"⭐️\",\"callback_data\":\"rate_1\"},{\"text\":\"⭐️⭐️\",\"callback_data\":\"rate_2\"},{\"text\":\"⭐️⭐️⭐️\",\"callback_data\":\"rate_3\"},{\"text\":\"⭐️⭐️⭐️⭐️\",\"callback_data\":\"rate_4\"},{\"text\":\"⭐️⭐️⭐️⭐️⭐️\",\"callback_data\":\"rate_5\"}]]}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 780],
+      "id": "send-feedback-request-012",
+      "name": "Send Feedback Request"
+    },
+    {
+      "parameters": {
+        "content": "## Marketing & Retention System\n\n**Purpose**: Drive user acquisition and increase retention\n\n**Features:**\n\n1. **Welcome Onboarding**\n   - New user detection\n   - Welcome message with 7 free bonus requests\n   - Clear value proposition\n   - Quick start guide\n   - Benefit: Increases activation rate\n\n2. **Referral Program**\n   - Unique referral links per user\n   - +5 bonus requests for referrer\n   - +7 welcome bonus for referee\n   - Tracking in database\n   - Command: /refer\n   - Benefit: Viral growth, lower CAC\n\n3. **Feedback Collection**\n   - Post-interaction surveys\n   - 5-star rating system\n   - Qualitative feedback\n   - Command: /feedback\n   - Benefit: Product improvement insights\n\n4. **Re-engagement** (not shown)\n   - Dormant user detection\n   - Win-back campaigns\n   - Special offers\n   - Benefit: Reduces churn\n\n**Database Requirements:**\n- users.bonus_requests (INTEGER)\n- users.referred_by (TEXT)\n- feedback table (not included)\n\n**Growth Metrics:**\n- Referral rate: Track conversions\n- Viral coefficient: Referrals per user\n- Activation rate: % who send first photo\n- Retention: DAU/MAU ratio\n\n**ROI:**\nReferral program reduces CAC by 50-70% vs paid acquisition.",
+        "height": 600,
+        "width": 400,
+        "color": 1
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [140, 1000],
+      "id": "documentation-note-013",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Check Existing User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing User": {
+      "main": [
+        [
+          {
+            "node": "New User?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New User?": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create New User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Referral Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Feedback Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New User": {
+      "main": [
+        [
+          {
+            "node": "Has Referral?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Referral?": {
+      "main": [
+        [
+          {
+            "node": "Credit Referrer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Credit Referrer": {
+      "main": [
+        [
+          {
+            "node": "Notify Referrer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Referral Stats": {
+      "main": [
+        [
+          {
+            "node": "Send Referral Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1"
+}

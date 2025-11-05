@@ -1,0 +1,20 @@
+{
+  "n8n-mcp": {
+    "type": "stdio",
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "--init",
+      "ghcr.io/czlonkowski/n8n-mcp:latest"
+    ],
+    "env": {
+      "MCP_MODE": "stdio",
+      "LOG_LEVEL": "error",
+      "DISABLE_CONSOLE_OUTPUT": "true",
+      "N8N_API_URL": "http://localhost:5679",
+      "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1ZjkxZTUzYy1hNmQwLTQ4ZjQtOTU2MC1jMTVhMWMyMTc3NzYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzYyMDk5NjEwfQ.Z9lgemR3liKWiASuccMKbzDAH48ypfz7i-w5YqGHbJg"
+    }
+  }
+}

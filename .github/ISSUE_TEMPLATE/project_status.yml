@@ -1,0 +1,201 @@
+name: 📊 Weekly Project Status
+description: Weekly project status update synced with PROJECT_TRACKER.md
+title: "[Status] Week of {{ date | date('YYYY-MM-DD') }}"
+labels: ["type:status", "priority:high"]
+assignees:
+  - hharp
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 📊 Weekly Project Status Report
+
+        This issue tracks the weekly status of the Chucky project. It syncs with `PROJECT_TRACKER.md` to maintain a single source of truth.
+
+        **Instructions:**
+        1. Review the current status in `PROJECT_TRACKER.md`
+        2. Fill out the sections below based on the tracker
+        3. Update `PROJECT_TRACKER.md` after completing tasks
+        4. Close this issue at the end of the week and create a new one
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Current Phase
+      description: What phase are we currently in?
+      options:
+        - Infrastructure Setup
+        - GitHub Actions Configuration
+        - Documentation & Planning
+        - Workflow Deployment
+        - Testing & Validation
+        - Production Launch
+        - Maintenance & Optimization
+    validations:
+      required: true
+
+  - type: input
+    id: overall-progress
+    attributes:
+      label: Overall Progress
+      description: "Example: 4/15 core tasks complete (27%)"
+      placeholder: "X/Y tasks complete (Z%)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Overall Status
+      description: What's the overall project status?
+      options:
+        - 🟢 On Track - No blockers
+        - 🟡 Caution - Some blockers, work continuing
+        - 🔴 Blocked - Critical blockers preventing progress
+    validations:
+      required: true
+
+  - type: textarea
+    id: quick-dashboard
+    attributes:
+      label: 📊 Quick Status Dashboard
+      description: Current status of each category
+      value: |
+        | Category | Status | Progress | Notes |
+        |----------|--------|----------|-------|
+        | **Security** | 🟡 | 2/3 | Docs secured, credentials need rotation |
+        | **Repository** | 🟡 | 1/2 | Organized, needs cleanup execution |
+        | **CI/CD** | ✅ | 5/5 | Infrastructure created |
+        | **Documentation** | 🟡 | 3/5 | Core docs complete |
+        | **Database** | ✅ | 1/1 | Supabase configured |
+        | **Workflows** | 🔴 | 0/11 | Not yet deployed |
+    validations:
+      required: true
+
+  - type: textarea
+    id: completed-this-week
+    attributes:
+      label: ✅ Completed This Week
+      description: What tasks were completed this week?
+      placeholder: |
+        - [x] Created PROJECT_TRACKER.md (Nov 5, Session 1)
+        - [x] Updated CLAUDE.md with tracking instructions (Nov 5, Session 1)
+        - [x] Created GitHub issue template (Nov 5, Session 1)
+    validations:
+      required: true
+
+  - type: textarea
+    id: critical-blockers
+    attributes:
+      label: 🔴 Critical Blockers
+      description: What's blocking progress RIGHT NOW?
+      placeholder: |
+        1. **[BLOCKER] Discord Credentials Need Rotation**
+           - Impact: Cannot use Discord integration
+           - Required action: Follow SECURITY_ALERT.md steps 1-4
+           - Estimated time: 10 minutes
+           - Dependencies: None
+           - Owner: User (manual action required)
+    validations:
+      required: true
+
+  - type: textarea
+    id: in-progress
+    attributes:
+      label: 🔄 In Progress
+      description: What's currently being worked on?
+      placeholder: |
+        - [ ] Configure GitHub Secrets (Started: Nov 6)
+        - [ ] Test CI/CD pipeline
+    validations:
+      required: false
+
+  - type: textarea
+    id: planned-next-week
+    attributes:
+      label: 📅 Planned for Next Week
+      description: What tasks are planned for next week?
+      placeholder: |
+        - [ ] Deploy ChuckyDiscordRAG.json to n8n Cloud
+        - [ ] Create INFRASTRUCTURE_STATUS.md
+        - [ ] Audit Supabase schemas
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: ⚠️ Risks & Concerns
+      description: What risks or concerns need attention?
+      placeholder: |
+        - Exposed Discord credentials in Git history (mitigated by rotation)
+        - 100+ untracked files need cleanup
+        - No deployment testing yet performed
+    validations:
+      required: false
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: 📈 Progress Metrics
+      description: Key metrics from PROJECT_TRACKER.md
+      value: |
+        - **Total Tasks:** 15 core tasks
+        - **Completed:** 4 (27%)
+        - **In Progress:** 3 (20%)
+        - **Blocked:** 3 (20%)
+        - **Not Started:** 5 (33%)
+
+        **Sprint Velocity:**
+        - Session 1 (Nov 5): 13 files created, 3 modified, 2.5 hours
+        - Tasks completed per session: ~4
+
+        **Time Tracking:**
+        - Security fixes: 45 min
+        - GitHub Actions setup: 1 hour
+        - Documentation creation: 45 min
+        - Project tracking setup: 30 min
+        - **Total invested:** ~3 hours
+    validations:
+      required: false
+
+  - type: textarea
+    id: links
+    attributes:
+      label: 🔗 Quick Links
+      description: Links to key documentation
+      value: |
+        - [PROJECT_TRACKER.md](../PROJECT_TRACKER.md) - Living project tracker (single source of truth)
+        - [SESSION_SUMMARY.md](../SESSION_SUMMARY.md) - Historical session notes
+        - [SECURITY_ALERT.md](../SECURITY_ALERT.md) - Credential rotation instructions
+        - [CLEANUP_GUIDE.md](../CLEANUP_GUIDE.md) - Repository cleanup guide
+        - [GITHUB_SETUP.md](../GITHUB_SETUP.md) - GitHub Actions configuration guide
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: weekly-checklist
+    attributes:
+      label: 📋 Weekly Maintenance Checklist
+      description: Standard tasks to check each week
+      options:
+        - label: Reviewed PROJECT_TRACKER.md and updated progress
+        - label: Checked for critical blockers and assigned owners
+        - label: Reviewed security alerts (if any)
+        - label: Tested latest workflow deployments (if any)
+        - label: Updated documentation with changes
+        - label: Committed tracker updates to Git
+        - label: Reviewed GitHub Actions workflow runs
+        - label: Checked n8n Cloud for errors/warnings
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 📝 Additional Notes
+      description: Any other notes, observations, or comments
+      placeholder: |
+        - User feedback on progress
+        - Technical challenges encountered
+        - Ideas for future improvements
+    validations:
+      required: false

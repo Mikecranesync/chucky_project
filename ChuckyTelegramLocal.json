@@ -1,0 +1,321 @@
+{
+  "name": "Chucky Telegram Local",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {
+          "download_updates": {
+            "downloadCustomFiles": true
+          }
+        }
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger (Polling)",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot",
+          "name": "Telegram Bot"
+        }
+      },
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.message.text }}",
+              "operation": "startsWith",
+              "value2": "/chucky"
+            }
+          ]
+        }
+      },
+      "id": "filter-chucky-commands",
+      "name": "Filter /chucky Commands",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Telegram message\nconst message = $input.item.json.message;\nconst fullText = message.text || '';\n\n// Extract command (remove /chucky prefix)\nconst command = fullText.replace(/^\\/chucky\\s*/i, '').trim();\n\n// Get user information\nconst userId = message.from.id;\nconst username = message.from.username || message.from.first_name || 'Unknown';\nconst chatId = message.chat.id;\n\n// Security: Whitelist check - YOUR TELEGRAM USER ID\nconst ALLOWED_USER_IDS = [\n  8445149012  // Your actual Telegram user ID from .env\n];\n\nif (!ALLOWED_USER_IDS.includes(userId)) {\n  throw new Error(`Unauthorized user: ${username} (${userId})`);\n}\n\n// Validate command is not empty\nif (!command || command.length === 0) {\n  return {\n    json: {\n      chatId: chatId,\n      error: true,\n      errorMessage: 'Please provide a command after /chucky\\n\\nExample:\\n/chucky create a webhook node'\n    }\n  };\n}\n\n// Security: Sanitize command (prevent injection)\nconst sanitized = command\n  .replace(/[;&|`$()]/g, '')  // Remove shell special characters\n  .replace(/\\.\\.\\//g, '')     // Remove directory traversal\n  .trim();\n\nif (sanitized !== command) {\n  return {\n    json: {\n      chatId: chatId,\n      error: true,\n      errorMessage: '⚠️ Command contains potentially unsafe characters and was blocked.'\n    }\n  };\n}\n\n// Rate limiting check\nconst now = Date.now();\nconst RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes\nconst MAX_COMMANDS = 10;\n\nif (!$execution.customData.has('rateLimits')) {\n  $execution.customData.set('rateLimits', {});\n}\n\nconst rateLimits = $execution.customData.get('rateLimits');\nconst userKey = `user_${userId}`;\n\nif (!rateLimits[userKey]) {\n  rateLimits[userKey] = {\n    commands: [],\n    windowStart: now\n  };\n}\n\nconst userLimit = rateLimits[userKey];\n\n// Clean old commands outside window\nuserLimit.commands = userLimit.commands.filter(t => t > now - RATE_LIMIT_WINDOW);\n\n// Check if over limit\nif (userLimit.commands.length >= MAX_COMMANDS) {\n  const oldestCommand = Math.min(...userLimit.commands);\n  const waitTime = Math.ceil((RATE_LIMIT_WINDOW - (now - oldestCommand)) / 1000);\n  \n  return {\n    json: {\n      chatId: chatId,\n      error: true,\n      errorMessage: `⚠️ Rate limit exceeded. Please wait ${waitTime} seconds before sending more commands.\\n\\nLimit: ${MAX_COMMANDS} commands per ${RATE_LIMIT_WINDOW / 60000} minutes.`\n    }\n  };\n}\n\n// Add current command to rate limit tracking\nuserLimit.commands.push(now);\n$execution.customData.set('rateLimits', rateLimits);\n\n// Return parsed and validated data\nreturn {\n  json: {\n    chatId: chatId,\n    userId: userId,\n    username: username,\n    command: sanitized,\n    originalMessage: fullText,\n    timestamp: new Date().toISOString(),\n    error: false\n  }\n};"
+      },
+      "id": "parse-and-validate",
+      "name": "Parse & Validate Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-for-errors",
+      "name": "Check for Errors",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.errorMessage }}"
+      },
+      "id": "send-error-message",
+      "name": "Send Error Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "⏳ Processing your request...\\n\\n📝 Command: {{ $json.command }}\\n\\n⏱ This may take 10-60 seconds depending on complexity.\\n\\nPlease wait..."
+      },
+      "id": "send-working-message",
+      "name": "Send Working Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1120, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=cd C:\\Users\\hharp\\chucky_project && claude /chucky \"{{ $json.command }}\"",
+        "options": {}
+      },
+      "id": "execute-local-command",
+      "name": "Execute Local Claude Command",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1340, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get command output\nconst cmdResult = $input.item.json;\nconst stdout = cmdResult.stdout || '';\nconst stderr = cmdResult.stderr || '';\nconst exitCode = cmdResult.exitCode || 0;\n\n// Get chat ID from earlier in workflow\nconst chatId = $('Parse & Validate Command').item.json.chatId;\nconst command = $('Parse & Validate Command').item.json.command;\n\n// Determine if successful\nconst isSuccess = exitCode === 0 && stdout.length > 0;\n\n// Format output\nlet output = '';\n\nif (isSuccess) {\n  output = stdout;\n} else if (stderr) {\n  output = `❌ Error:\\n\\n${stderr}`;\n} else {\n  output = `⚠️ Command completed but returned no output.\\n\\nExit code: ${exitCode}`;\n}\n\n// Truncate if too long (Telegram limit is 4096 characters)\nconst MAX_LENGTH = 4000;\nlet truncated = false;\n\nif (output.length > MAX_LENGTH) {\n  output = output.substring(0, MAX_LENGTH);\n  truncated = true;\n}\n\n// Format final message\nlet message = '';\n\nif (isSuccess) {\n  message = `✅ **Command Completed**\\n\\n`;\n  message += `📝 Request: \\`${command}\\`\\n\\n`;\n  message += `📤 Result:\\n\\`\\`\\`\\n${output}\\n\\`\\`\\``;\n  \n  if (truncated) {\n    message += `\\n\\n⚠️ Output was truncated (exceeded ${MAX_LENGTH} characters)`;\n  }\n} else {\n  message = `❌ **Command Failed**\\n\\n`;\n  message += `📝 Request: \\`${command}\\`\\n\\n`;\n  message += `${output}`;\n}\n\n// Add timestamp\nconst duration = Date.now() - new Date($('Parse & Validate Command').item.json.timestamp).getTime();\nmessage += `\\n\\n⏱ Execution time: ${(duration / 1000).toFixed(1)}s`;\n\n// Log to console for debugging\nconsole.log(`Chucky Remote: ${isSuccess ? 'SUCCESS' : 'FAILED'} - User: ${$('Parse & Validate Command').item.json.username}`);\n\nreturn {\n  json: {\n    chatId: chatId,\n    message: message,\n    success: isSuccess,\n    executionTimeMs: duration,\n    exitCode: exitCode,\n    // For audit logging\n    userId: $('Parse & Validate Command').item.json.userId,\n    username: $('Parse & Validate Command').item.json.username,\n    command: command,\n    timestamp: $('Parse & Validate Command').item.json.timestamp\n  }\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-result-message",
+      "name": "Send Result Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "chucky_audit",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "user_id": "={{ $json.userId }}",
+            "username": "={{ $json.username }}",
+            "command": "={{ $json.command }}",
+            "platform": "telegram",
+            "execution_time_ms": "={{ $json.executionTimeMs }}",
+            "success": "={{ $json.success }}",
+            "error": "={{ $json.exitCode !== 0 ? 'Exit code: ' + $json.exitCode : null }}"
+          }
+        }
+      },
+      "id": "audit-log",
+      "name": "Audit Log (Supabase)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2000, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase",
+          "name": "Supabase"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "id": "workflow-complete",
+      "name": "Workflow Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2220, 100]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger (Polling)": {
+      "main": [
+        [
+          {
+            "node": "Filter /chucky Commands",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter /chucky Commands": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Command": {
+      "main": [
+        [
+          {
+            "node": "Check for Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Errors": {
+      "main": [
+        [
+          {
+            "node": "Send Working Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Working Message": {
+      "main": [
+        [
+          {
+            "node": "Execute Local Claude Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Local Claude Command": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Send Result Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Result Message": {
+      "main": [
+        [
+          {
+            "node": "Audit Log (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Chucky Remote",
+      "id": "chucky-remote"
+    },
+    {
+      "name": "Telegram",
+      "id": "telegram"
+    },
+    {
+      "name": "Local",
+      "id": "local"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "instanceId": "local-n8n-instance"
+  },
+  "id": "chucky-telegram-local",
+  "versionId": "1"
+}

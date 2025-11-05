@@ -1,0 +1,323 @@
+name: Weekly Maintenance Tasks
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9 AM UTC
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-maintenance-issue:
+    name: Create Weekly Maintenance Issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get current date
+        id: date
+        run: |
+          echo "week_start=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "week_end=$(date -u -d '+6 days' +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "formatted=$(date -u +'%B %d, %Y')" >> $GITHUB_OUTPUT
+
+      - name: Check for existing open maintenance issue
+        id: check-existing
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'type:maintenance',
+              per_page: 10
+            });
+
+            const weekStart = '${{ steps.date.outputs.week_start }}';
+            const existingIssue = issues.find(issue =>
+              issue.title.includes(weekStart) ||
+              issue.title.includes('Weekly Maintenance')
+            );
+
+            if (existingIssue) {
+              core.setOutput('exists', 'true');
+              core.setOutput('issue_number', existingIssue.number);
+              core.setOutput('issue_url', existingIssue.html_url);
+            } else {
+              core.setOutput('exists', 'false');
+            }
+
+            return { exists: !!existingIssue };
+
+      - name: Count workflow files
+        id: workflow-count
+        run: |
+          WORKFLOW_COUNT=$(find . -maxdepth 1 -name "*.json" -type f | wc -l)
+          echo "count=$WORKFLOW_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Create maintenance issue
+        if: steps.check-existing.outputs.exists == 'false'
+        id: create-issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const weekStart = '${{ steps.date.outputs.week_start }}';
+            const weekEnd = '${{ steps.date.outputs.week_end }}';
+            const formatted = '${{ steps.date.outputs.formatted }}';
+            const workflowCount = '${{ steps.workflow-count.outputs.count }}';
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Weekly Maintenance: ${weekStart}`,
+              labels: ['type:maintenance', 'status:ready', 'priority:medium'],
+              assignees: [context.repo.owner],
+              body: `## Weekly n8n Workflow Maintenance
+
+            **Week of:** ${formatted}
+            **Period:** ${weekStart} to ${weekEnd}
+            **Total Workflows:** ${workflowCount}
+
+            ---
+
+            ### 🔄 Production Workflow Health Checks
+
+            #### Active Workflows
+            - [ ] **ChuckyDiscordRAG.json** - Test Discord commands and image analysis
+            - [ ] **ChuckyTelegramLocal.json** - Verify Telegram bot responses
+            - [ ] **Payment_Management_Workflow.json** - Check Stripe webhooks and payment processing
+            - [ ] **User_Auth_Workflow.json** - Test authentication flow end-to-end
+            - [ ] **Quota_Enforcement_Workflow.json** - Validate quota limits and resets
+            - [ ] **Premium_Features_Workflow.json** - Test premium feature access control
+            - [ ] **Monitoring_Analytics_Workflow.json** - Review analytics data collection
+            - [ ] **Security_Compliance_Workflow.json** - Verify security checks running
+
+            #### Workflow Status
+            - [ ] All workflows are active (not paused)
+            - [ ] No execution errors in past 7 days
+            - [ ] Webhook triggers are functioning
+            - [ ] All nodes are enabled (no disabled nodes in production)
+
+            ---
+
+            ### 💾 Database & Storage Health
+
+            #### Supabase Vector Store
+            - [ ] Check total embeddings count
+            - [ ] Verify vector search performance (<500ms)
+            - [ ] Review storage usage (current: ___ / quota: ___)
+            - [ ] Test RAG query responses
+
+            #### Postgres Chat Memory
+            - [ ] Clear old chat sessions (>30 days)
+            - [ ] Check memory table size
+            - [ ] Verify memory retrieval working correctly
+            - [ ] Archive historical data if needed
+
+            #### Backup Verification
+            - [ ] Confirm nightly backups completed successfully
+            - [ ] Test restore process (sample workflow)
+            - [ ] Verify backup retention policy (30 days)
+            - [ ] Check backup storage usage
+
+            ---
+
+            ### 🔌 API & Integration Status
+
+            #### Google Gemini
+            - [ ] Check quota usage (current month)
+            - [ ] Verify API response times (<2s average)
+            - [ ] Test image analysis functionality
+            - [ ] Review rate limit status
+
+            #### xAI Grok
+            - [ ] Verify API key validity
+            - [ ] Test chat completions
+            - [ ] Check usage against quota
+            - [ ] Review response quality
+
+            #### Discord Integration
+            - [ ] Test bot webhook connectivity
+            - [ ] Verify command responses
+            - [ ] Check message delivery rates
+            - [ ] Review error logs
+
+            #### Telegram Integration
+            - [ ] Test webhook endpoint
+            - [ ] Verify bot responses
+            - [ ] Check file upload/download
+            - [ ] Review usage statistics
+
+            #### Stripe (Payment Processing)
+            - [ ] Verify webhook endpoint responding
+            - [ ] Test payment flow (test mode)
+            - [ ] Check failed payment handling
+            - [ ] Review transaction logs
+
+            #### Brave Search
+            - [ ] Check remaining API credits
+            - [ ] Test search functionality
+            - [ ] Review search quality
+            - [ ] Monitor usage trends
+
+            ---
+
+            ### 🔒 Security & Compliance
+
+            #### Credential Management
+            - [ ] Review n8n credential usage
+            - [ ] Check for credentials >90 days old
+            - [ ] Verify no hardcoded secrets in workflows
+            - [ ] Audit API key access logs
+
+            #### Security Updates
+            - [ ] Check for n8n version updates
+            - [ ] Review Docker container security patches
+            - [ ] Update dependencies if needed
+            - [ ] Scan for vulnerabilities
+
+            #### Access Control
+            - [ ] Review user access permissions
+            - [ ] Verify 2FA enabled for critical services
+            - [ ] Check API rate limiting configured
+            - [ ] Review recent access logs
+
+            ---
+
+            ### 📊 Performance & Monitoring
+
+            #### Workflow Execution Metrics
+            - [ ] Average execution time per workflow
+            - [ ] Success rate (target: >99%)
+            - [ ] Error rate trends
+            - [ ] Resource usage (CPU, memory)
+
+            #### Alert Configuration
+            - [ ] Verify error alerts are firing correctly
+            - [ ] Test notification delivery (Discord/Telegram)
+            - [ ] Review alert thresholds
+            - [ ] Check on-call rotation if applicable
+
+            #### Cost Analysis
+            - [ ] Review API usage costs
+            - [ ] Check database storage costs
+            - [ ] Analyze workflow execution costs
+            - [ ] Identify optimization opportunities
+
+            ---
+
+            ### 📝 Documentation & Training
+
+            #### Documentation Updates
+            - [ ] Review and update CLAUDE.md if workflows changed
+            - [ ] Update deployment guides
+            - [ ] Check README accuracy
+            - [ ] Update troubleshooting guides
+
+            #### Change Log
+            - [ ] Document any workflow modifications this week
+            - [ ] Update version numbers if applicable
+            - [ ] Record configuration changes
+            - [ ] Note any incident resolutions
+
+            ---
+
+            ### 🚀 Optimization Opportunities
+
+            #### Performance Improvements
+            - [ ] Identify slow-running workflows
+            - [ ] Review node execution times
+            - [ ] Optimize database queries
+            - [ ] Consider caching opportunities
+
+            #### Cost Optimization
+            - [ ] Review API call patterns
+            - [ ] Identify redundant operations
+            - [ ] Optimize storage usage
+            - [ ] Consider batching operations
+
+            ---
+
+            ### 📋 Action Items from Last Week
+
+            <!-- Add any unresolved items from previous maintenance -->
+
+            - [ ] (Add carry-over tasks here)
+
+            ---
+
+            ### 🎯 This Week's Focus
+
+            <!-- Add any specific priorities or projects for this week -->
+
+            ---
+
+            ### 📌 Notes
+
+            **Findings:**
+            <!-- Document any issues, observations, or insights discovered during maintenance -->
+
+            **Next Week's Priorities:**
+            <!-- Plan ahead for next maintenance cycle -->
+
+            ---
+
+            **Maintenance Schedule:**
+            - 🗓️ Created: ${formatted}
+            - ⏰ Due: ${weekEnd}
+            - 🔄 Recurrence: Weekly (every Monday)
+            - 🤖 Auto-generated by GitHub Actions
+
+            **Resources:**
+            - [n8n Instance](${'${{ secrets.N8N_URL }}'})
+            - [Supabase Dashboard](https://app.supabase.com)
+            - [Workflow Documentation](./CLAUDE.md)
+            - [Deployment Guide](./GITHUB_SETUP.md)
+            `
+            });
+
+            core.setOutput('issue_number', issue.data.number);
+            core.setOutput('issue_url', issue.data.html_url);
+
+            return { number: issue.data.number, url: issue.data.html_url };
+
+      - name: Add issue to project board (if exists)
+        if: steps.check-existing.outputs.exists == 'false'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // This step will succeed silently if no project is configured
+            // To use this, create a GitHub Project and configure PROJECT_ID secret
+            const projectId = process.env.PROJECT_ID;
+            if (!projectId) {
+              console.log('No project configured - skipping');
+              return;
+            }
+
+            // Add issue to project
+            // Note: Requires additional setup with GitHub Projects API
+            console.log('Project board integration available - configure PROJECT_ID secret');
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check-existing.outputs.exists }}" == "true" ]; then
+            echo "## ℹ️ Maintenance Issue Already Exists" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "An open maintenance issue already exists for this week:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Issue:** #${{ steps.check-existing.outputs.issue_number }}" >> $GITHUB_STEP_SUMMARY
+            echo "**URL:** ${{ steps.check-existing.outputs.issue_url }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Maintenance Issue Created" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Issue:** #${{ steps.create-issue.outputs.issue_number }}" >> $GITHUB_STEP_SUMMARY
+            echo "**URL:** ${{ steps.create-issue.outputs.issue_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Week:** ${{ steps.date.outputs.week_start }} to ${{ steps.date.outputs.week_end }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Workflows:** ${{ steps.workflow-count.outputs.count }}" >> $GITHUB_STEP_SUMMARY
+          fi
