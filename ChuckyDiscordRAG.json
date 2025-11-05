@@ -1,5 +1,8 @@
 {
   "name": "Chucky Discord RAG Agent",
+  "meta": {
+    "test": "Testing CI validation workflow"
+  },
   "nodes": [
     {
       "parameters": {
