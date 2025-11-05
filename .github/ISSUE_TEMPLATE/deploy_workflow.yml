@@ -1,0 +1,186 @@
+name: 🚀 Deploy n8n Workflow
+description: Request deployment of n8n workflow(s) to n8n Cloud
+title: "[DEPLOY] "
+labels: ["type:deployment", "status:needs-triage", "priority:medium"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## n8n Workflow Deployment Request
+
+        Use this template to track deployment of n8n workflows to production or staging.
+        This follows our manual, issue-driven deployment process (no GitHub Actions costs).
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Target Environment
+      description: Where do you want to deploy?
+      options:
+        - production
+        - staging
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: workflows
+    attributes:
+      label: Workflows to Deploy
+      description: Select the workflows to deploy
+      options:
+        - label: ChuckyDiscordRAG.json - Core Discord RAG agent
+        - label: ChuckyTelegramLocal.json - Telegram bot integration
+        - label: User_Auth_Workflow.json - User authentication and registration
+        - label: Payment_Management_Workflow.json - Payment processing
+        - label: Quota_Enforcement_Workflow.json - Usage quota management
+        - label: Premium_Features_Workflow.json - Premium tier features
+        - label: Monitoring_Analytics_Workflow.json - System monitoring
+        - label: Security_Compliance_Workflow.json - Security checks
+        - label: Stripe_Webhook_Handler.json - Stripe webhook processing
+        - label: Monthly_Quota_Reset.json - Monthly quota reset job
+        - label: Marketing_Retention_Workflow.json - Marketing automation
+
+  - type: checkboxes
+    id: pre_deployment
+    attributes:
+      label: Pre-Deployment Checklist
+      description: Complete these steps BEFORE deploying
+      options:
+        - label: "Validated workflow JSON locally (`./scripts/validate-workflows.sh <file>`)"
+          required: true
+        - label: "Ran security scan (`./scripts/security-scan.sh`)"
+          required: true
+        - label: "Tested in staging (if applicable)"
+          required: false
+        - label: "Reviewed code changes in workflow"
+          required: true
+        - label: "Backed up current production workflow (if updating)"
+          required: false
+        - label: "Updated workflow documentation"
+          required: false
+    validations:
+      required: true
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: Changes Description
+      description: What changes are being deployed? What's new or fixed?
+      placeholder: |
+        - Added error handling for failed Discord messages
+        - Updated Gemini API integration to use new model
+        - Fixed bug in quota calculation
+    validations:
+      required: true
+
+  - type: textarea
+    id: deployment_steps
+    attributes:
+      label: Deployment Steps
+      description: How will you deploy this workflow?
+      value: |
+        1. Load environment variables: `source .env`
+        2. Validate workflow: `./scripts/validate-workflows.sh <workflow-file>`
+        3. Deploy: `./scripts/deploy-to-n8n.sh --env <environment> <workflow-file>`
+        4. Test deployment in n8n Cloud UI
+        5. Update this issue with results
+    validations:
+      required: true
+
+  - type: textarea
+    id: testing_plan
+    attributes:
+      label: Post-Deployment Testing
+      description: How will you verify the deployment works?
+      placeholder: |
+        - [ ] Verify workflow appears in n8n Cloud
+        - [ ] Test webhook connectivity
+        - [ ] Send test Discord message
+        - [ ] Check database connections
+        - [ ] Verify error handling
+        - [ ] Monitor first 10 executions
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback_plan
+    attributes:
+      label: Rollback Plan
+      description: How will you rollback if deployment fails?
+      placeholder: |
+        1. Identify the previous working workflow version
+        2. Re-deploy previous version using deploy script
+        3. Verify rollback successful
+        4. Document what went wrong
+      value: |
+        1. Previous workflow JSON is backed up in git history
+        2. Can re-deploy previous version: `./scripts/deploy-to-n8n.sh --env production <old-version>.json`
+        3. Or manually import previous version via n8n Cloud UI
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Deployment Impact
+      description: What's the impact of this deployment?
+      options:
+        - Low - Bug fix or minor improvement
+        - Medium - New feature or significant update
+        - High - Major changes or breaking changes
+        - Critical - Urgent fix or security patch
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Does this deployment depend on other deployments or configurations?
+      placeholder: |
+        - Depends on User_Auth_Workflow being deployed first
+        - Requires new Supabase table (already created)
+        - Needs new environment variable: XYZ_API_KEY
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Any other information about this deployment?
+      placeholder: |
+        - Deployment window: After 6 PM to avoid peak hours
+        - Need to notify users before deploying
+        - Special configuration needed in n8n Cloud
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        ## Post-Deployment Instructions
+
+        After deploying:
+        1. Update this issue with deployment results
+        2. Change label to `status:deployed` if successful
+        3. Change label to `status:failed` if unsuccessful
+        4. Add comment with test results
+        5. Close issue when verified working
+
+        ## Deployment Commands
+
+        ```bash
+        # Validate
+        ./scripts/validate-workflows.sh <workflow-file>
+
+        # Deploy to production
+        source .env
+        ./scripts/deploy-to-n8n.sh --env production <workflow-file>
+
+        # Deploy to staging
+        ./scripts/deploy-to-n8n.sh --env staging <workflow-file>
+        ```
